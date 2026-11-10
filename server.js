@@ -30,11 +30,21 @@ const FLOW = { rose: 10, tulip: 8, sunflower: 7, daisy: 5, lavender: 9, lily: 12
   apple: 60, orange: 60, olive: 55, cypress: 40, palm: 80, cherry: 90, lemon: 60 };
 const HOUSE = [[300, 20], [500, 40], [800, 30]];
 const PRICE = [2500, 3500];
-const PLOTS = 60, NTREES = 28, MAXLEVEL = 8;
+const PLOTS = 108, NTREES = 28, LAND = 96, START_LAND = 48;
+const TREEPOS = [[-30,-30],[-20,-34],[-12,-40],[14,-38],[26,-36],[60,-24],[66,-14],[68,-30],[-44,-6],[-46,-18],[-44,8],[68,8],[70,30],[66,44],[72,56],[4,70],[18,74],[36,74],[54,72],[8,84],[2,96],[-30,100],[-46,46],[-46,30],[-6,-32],[40,-40],[-52,-34],[-20,104]];
+const WROLES = ['farmer', 'herder', 'buyer', 'woodcutter'];
+const WNAMES = ['سعيد','خالد','ماهر','نبيل','وليد','حسن','رامي','طارق','جميل','فهد','سامر','بلال','ياسر','زياد','عادل','مراد','أنس','هاني','كمال','مروان'];
+const CROPK = ['wheat', 'corn', 'tomato', 'potato'];
+const PRODK = ['feather', 'turkeyegg', 'duckegg', 'angora', 'truffle', 'wool', 'cheese', 'dmilk', 'cmilk', 'alpaca'];
+const plotXY = i => i < 96 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 102 ? [75 + ((i - 96) % 3) * 4.4, -11 + Math.floor((i - 96) / 3) * 4.4] : [-108 + ((i - 102) % 3) * 4.4, 26 + Math.floor((i - 102) / 3) * 4.4];
+const landOwned = s => s.lo.filter(Boolean).length;
+const landCost = s => 100 + 10 * (landOwned(s) - START_LAND);
+const maxWorkers = s => 10 + (s.house >= 3 ? 10 : 0);
+const hireCost = s => 150 + 30 * Math.max(0, s.workers.length - 5);
 const rnd = (a, b) => a + Math.random() * (b - a);
 const send = (w, o) => w && w.readyState === 1 && w.send(JSON.stringify(o));
 const all = (r, o) => r.p.forEach(w => send(w, o));
-const avail = (s, i) => i < 6 * s.level || (i >= 48 && i < 54 && s.own[0]) || (i >= 54 && s.own[1]);
+const avail = (s, i) => i < LAND ? !!s.lo[i] : i < 102 ? !!s.own[0] : !!s.own[1];
 const capOf = (s, k) => 6 + 6 * (s.up[k] || 0) + 4 * (s.own[0] + s.own[1]);
 const newState = () => {
   const stock = {}, mult = {}, inv = {}, up = {};
@@ -42,11 +52,12 @@ const newState = () => {
   for (const k in FLOW) inv[k] = 0;
   for (const k in ANI) up[k] = 0;
   return {
-    money: 100, level: 1, feed: 20, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
+    money: 400, feed: 40, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
     plots: Array.from({ length: PLOTS }, () => ({ c: '', p: 0, w: 0 })),
     garden: Array(100).fill(''), trees: Array(NTREES).fill(3), animals: [], enemies: [],
-    rel: [0, 0], own: [0, 0],
-    msg: 'مرحبًا في مزرعتكما. انقرا على الحقول بعد الاقتراب منها لتبدآ.'
+    rel: [0, 0], own: [0, 0], lo: Array.from({ length: LAND }, (_, i) => i < START_LAND ? 1 : 0),
+    workers: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })),
+    msg: 'مرحبًا! عندكما 5 عمال يعملون وحدهم، ويمكنكما شراء أي أرض بالنقر عليها.'
   };
 };
 function addRel(s, n, v) {
@@ -59,21 +70,83 @@ function tick(r) {
   s.time += dt;
   const day = Math.floor(s.time / 120);
   if (day !== r.day) { r.day = day; for (const k in BASE) s.mult[k] = +(0.8 + Math.random() * 0.5).toFixed(2); }
-  r.rt -= dt;
-  if (!s.rain && r.rt <= 0) { s.rain = true; r.rl = rnd(20, 30); s.msg = 'بدأ المطر، الحقول تُسقى تلقائيًا'; }
-  if (s.rain) { r.rl -= dt; s.plots.forEach(p => { if (p.c) p.w = 1; }); if (r.rl <= 0) { s.rain = false; r.rt = rnd(90, 180); } }
+  s.rain = false;
   s.plots.forEach(p => { if (p.c && p.w && p.p < 100) p.p = Math.min(100, p.p + 100 / CROPS[p.c][2] * dt); });
+  const hb = 1 + 0.12 * Math.min(5, s.workers.filter(w => w.role === 'herder').length);
   s.animals.forEach(a => {
     const [, prod, cy, use] = ANI[a.k];
     if (!prod) return;
-    if (a.t < cy) a.t += dt;
+    if (a.t < cy) a.t += dt * hb;
     if (a.t >= cy && s.feed >= use) { s.feed -= use; s.stock[prod]++; a.t = 0; }
   });
   const gc = s.garden.filter(Boolean).length;
   r.hv += dt * s.hives * (1 + gc * 0.03); if (r.hv >= 50) { r.hv -= 50; s.stock.honey++; }
   s.trees.forEach((h, i) => { if (h <= 0 && s.time >= r.rg[i]) s.trees[i] = 3; });
+  wtick(r, dt);
   if ((r.tc = (r.tc || 0) + 1) % 2 === 0) all(r, { t: 'state', s });
 }
+const sellKeys = (s, keys) => { let v = 0; keys.forEach(k => { v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }); s.money += v; return v; };
+const near = (list, w) => { let b = null, bd = 1e9; list.forEach(i => { const [x, z] = plotXY(i); const d = Math.hypot(x - w.x, z - w.z); if (d < bd) { bd = d; b = i; } }); return b; };
+function setTask(r, w, act, tx, tz, work, i) {
+  w.act = act; w.tx = tx; w.tz = tz; w.v++; w.i = i === undefined ? -1 : i;
+  w.busy = Math.max(1.2, Math.hypot(tx - w.x, tz - w.z) * 1.35 / 5) + work;
+  if (i !== undefined && i >= 0) r.lock.add((act === 'chop' ? 't' : 'p') + i);
+}
+function release(r, w) { if (w.i >= 0) { r.lock.delete((w.act === 'chop' ? 't' : 'p') + w.i); } w.i = -1; }
+function idle(r, w) {
+  const base = w.role === 'farmer' ? [-20, 25] : w.role === 'herder' ? [20, 8] : w.role === 'buyer' ? [0, 4] : [10, -4];
+  setTask(r, w, 'idle', base[0] + rnd(-12, 12), base[1] + rnd(-6, 6), rnd(1, 3));
+}
+function assign(r, w) {
+  const s = r.s, free = i => !r.lock.has('p' + i);
+  if (w.role === 'farmer') {
+    const cropN = CROPK.reduce((a, k) => a + s.stock[k], 0);
+    if (cropN >= 12 && !s.workers.some(x => x !== w && x.act === 'sellcrops')) return setTask(r, w, 'sellcrops', 0, -3.5, 1.2);
+    const ready = [], dry = [], empty = [];
+    s.plots.forEach((p, i) => { if (i >= PLOTS || !avail(s, i) || !free(i)) return; if (p.c && p.p >= 100) ready.push(i); else if (p.c && !p.w) dry.push(i); else if (!p.c) empty.push(i); });
+    let i = near(ready, w);
+    if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'harvest', x, z, 1.6, i); }
+    i = near(dry, w);
+    if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'water', x, z, 1.2, i); }
+    if (s.money >= 12) { i = near(empty, w); if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'plant', x, z, 1.6, i); } }
+    return idle(r, w);
+  }
+  if (w.role === 'herder') {
+    if (s.feed < 40 && s.money >= 12 && !s.workers.some(x => x !== w && x.act === 'feed')) return setTask(r, w, 'feed', 7, -3.6, 1.5);
+    if (PRODK.reduce((a, k) => a + s.stock[k], 0) >= 10 && !s.workers.some(x => x !== w && x.act === 'sellprod')) return setTask(r, w, 'sellprod', 0, -3.5, 1.2);
+    const ks = [...new Set(s.animals.map(a => a.k))];
+    if (ks.length) { const k = ks[Math.floor(Math.random() * ks.length)], [cx, cz] = ENC[k]; return setTask(r, w, 'tend', cx + rnd(-2, 2), cz - 7, rnd(4, 7)); }
+    return idle(r, w);
+  }
+  if (w.role === 'buyer') {
+    if (s.money >= landCost(s) + 250) {
+      const cand = []; for (let i = 0; i < LAND; i++) if (!s.lo[i] && free(i)) cand.push(i);
+      if (cand.length) { const i = cand[0], [x, z] = plotXY(i); return setTask(r, w, 'buyland', x, z, 1.5, i); }
+    }
+    return idle(r, w);
+  }
+  if (w.role === 'woodcutter') {
+    const cand = []; s.trees.forEach((h, i) => { if (h > 0 && !r.lock.has('t' + i)) cand.push(i); });
+    let b = null, bd = 1e9; cand.forEach(i => { const d = Math.hypot(TREEPOS[i][0] - w.x, TREEPOS[i][1] - w.z); if (d < bd) { bd = d; b = i; } });
+    if (b !== null) return setTask(r, w, 'chop', TREEPOS[b][0] + 1.2, TREEPOS[b][1] + 1.2, 3, b);
+    return idle(r, w);
+  }
+  idle(r, w);
+}
+function finish(r, w) {
+  const s = r.s, p = w.i >= 0 ? s.plots[w.i] : null;
+  w.x = w.tx; w.z = w.tz;
+  if (w.act === 'plant' && p && avail(s, w.i) && !p.c) { const k = Math.random() < .45 ? 'corn' : Math.random() < .5 ? 'tomato' : Math.random() < .5 ? 'wheat' : 'potato'; const c = CROPS[k][0]; if (s.money >= c) { s.money -= c; p.c = k; p.p = 0; p.w = 1; } }
+  else if (w.act === 'water' && p && p.c && !p.w) p.w = 1;
+  else if (w.act === 'harvest' && p && p.c && p.p >= 100) { s.stock[p.c] += 4; p.c = ''; p.p = 0; p.w = 0; }
+  else if (w.act === 'sellcrops') sellKeys(s, CROPK);
+  else if (w.act === 'sellprod') sellKeys(s, PRODK);
+  else if (w.act === 'feed') { for (let n = 0; n < 4 && s.money >= 12 && s.feed < 80; n++) { s.money -= 12; s.feed = Math.min(80, s.feed + 10); } }
+  else if (w.act === 'buyland' && w.i >= 0 && !s.lo[w.i] && s.money >= landCost(s)) { s.money -= landCost(s); s.lo[w.i] = 1; s.msg = 'العامل ' + WNAMES[(w.id - 1) % 20] + ' اشترى قطعة أرض جديدة'; }
+  else if (w.act === 'chop' && w.i >= 0 && s.trees[w.i] > 0) { s.trees[w.i] = 0; s.stock.wood += 3; r.rg[w.i] = s.time + 90; }
+  release(r, w); w.act = '';
+}
+function wtick(r, dt) { r.s.workers.forEach(w => { if (w.busy > 0) { w.busy -= dt; if (w.busy <= 0) finish(r, w); } else assign(r, w); }); }
 setInterval(() => { for (const c in rooms) if (rooms[c].p.length === 2) tick(rooms[c]); }, 100);
 
 wss.on('connection', ws => {
@@ -81,7 +154,7 @@ wss.on('connection', ws => {
     let m; try { m = JSON.parse(d); } catch { return; }
     if (m.t === 'create') {
       let c; do { c = Math.random().toString(36).slice(2, 6).toUpperCase(); } while (rooms[c]);
-      rooms[c] = { p: [ws], s: newState(), idc: 0, rt: 100, rl: 0, hv: 0, day: 0, rg: Array(NTREES).fill(0), gc: [0, 0] };
+      rooms[c] = { p: [ws], s: newState(), lock: new Set(), idc: 0, rt: 100, rl: 0, hv: 0, day: 0, rg: Array(NTREES).fill(0), gc: [0, 0] };
       ws.room = c; ws.role = m.c === 1 ? 1 : 0;
       return send(ws, { t: 'joined', code: c, role: ws.role });
     }
@@ -131,10 +204,18 @@ wss.on('connection', ws => {
       const k = m.k, u = s.up[k], cost = 150 * ((u || 0) + 1);
       if (!(k in ANI) || u >= 3 || s.money < cost || s.stock.wood < 10) return;
       s.money -= cost; s.stock.wood -= 10; s.up[k]++; s.msg = 'تم توسيع مكان الحيوانات (+6)';
-    } else if (m.t === 'expand') {
-      const cost = 200 * s.level;
-      if (s.level >= MAXLEVEL || s.money < cost || s.stock.wood < 10) return;
-      s.money -= cost; s.stock.wood -= 10; s.level++; s.msg = 'تم شراء أرض زراعية جديدة';
+    } else if (m.t === 'buyLand' || m.t === 'buyRow') {
+      const i = m.i | 0; if (!(i >= 0 && i < LAND)) return;
+      const list = m.t === 'buyRow' ? [0, 1, 2, 3, 4, 5].map(c => Math.floor(i / 6) * 6 + c) : [i];
+      let n = 0; list.forEach(j => { if (!s.lo[j] && s.money >= landCost(s)) { s.money -= landCost(s); s.lo[j] = 1; n++; } });
+      if (!n) return; s.msg = who + ' اشترى ' + (n > 1 ? n + ' قطع أرض' : 'قطعة أرض');
+    } else if (m.t === 'hire') {
+      if (!WROLES.includes(m.r) || s.workers.length >= maxWorkers(s) || s.money < hireCost(s)) return;
+      s.money -= hireCost(s); const id = s.workers.reduce((a, w) => Math.max(a, w.id), 0) + 1;
+      s.workers.push({ id, role: m.r, x: rnd(-3, 3), z: 1, tx: 0, tz: 1, act: '', v: 0, busy: 0.3, i: -1 }); s.msg = 'تم توظيف عامل جديد';
+    } else if (m.t === 'setRole') {
+      const w = s.workers.find(x => x.id === (m.id | 0)); if (!w || !WROLES.includes(m.r) || w.role === m.r) return;
+      release(r, w); w.role = m.r; w.act = ''; w.busy = 0.3; s.msg = 'تغيّرت مهمة العامل';
     } else if (m.t === 'hive') {
       if (s.hives >= 3 || s.money < 150) return;
       s.money -= 150; s.hives++; s.msg = 'تم تركيب خلية نحل';
@@ -165,10 +246,6 @@ wss.on('connection', ws => {
     } else if (m.t === 'buildHouse') {
       const h = HOUSE[s.house]; if (!h || s.money < h[0] || s.stock.wood < h[1]) return;
       s.money -= h[0]; s.stock.wood -= h[1]; s.house++; s.msg = s.house === 3 ? 'اكتمل بناء بيتكما!' : 'تمت مرحلة من بناء البيت';
-    } else if (m.t === 'sleep') {
-      const night = Math.sin(s.time % 120 / 120 * Math.PI * 2) < 0;
-      if (s.house < 3 || !night) return;
-      s.time = (Math.floor(s.time / 120) + 1) * 120 + 2; s.msg = 'نمتما جيدًا. صباح جديد';
     } else if (m.t === 'ride') {
       const a = s.animals.find(x => x.id === m.id);
       if (!a || !RIDE[a.k] || a.rider !== null || s.animals.some(x => x.rider === ws.role)) return;
