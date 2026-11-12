@@ -33,8 +33,11 @@ const ENC = {
 };
 const BASE = {
   wheat: 10, corn: 30, tomato: 22, potato: 16, egg: 4, duckegg: 6, feather: 9, turkeyegg: 8, angora: 13, truffle: 38, wool: 14, cheese: 12,
-  milk: 18, dmilk: 24, cmilk: 32, alpaca: 22, honey: 20, fish: 18, wood: 6, butter: 75, yogurt: 55, bcheese: 110, bread: 42, cake: 95, cream: 42, icecream: 70, ghee: 170
+  milk: 18, dmilk: 24, cmilk: 32, alpaca: 22, honey: 20, fish: 18, wood: 6, butter: 75, yogurt: 55, bcheese: 110, bread: 42, cake: 95, cream: 42, icecream: 70, ghee: 170, meat: 28, hide: 40, ivory: 160, horn: 220
 };
+const WILD = { lion: [3, { meat: 4, hide: 2 }], elephant: [6, { meat: 10, ivory: 2 }], giraffe: [4, { meat: 6, hide: 2 }], rhino: [5, { meat: 8, horn: 1 }], hippo: [5, { meat: 8, hide: 2 }], zebra: [2, { meat: 3, hide: 1 }], bear: [4, { meat: 5, hide: 2 }] };
+const WILDLIST = ['lion', 'lion', 'lion', 'elephant', 'elephant', 'giraffe', 'giraffe', 'giraffe', 'rhino', 'rhino', 'hippo', 'hippo', 'zebra', 'zebra', 'zebra', 'bear', 'bear'];
+const NGOODS = [['wheat', 'corn', 'tomato', 'potato', 'egg', 'milk'], ['wool', 'honey', 'cheese', 'fish', 'butter', 'bread']];
 const RECIPES = { butter: { milk: 3 }, yogurt: { milk: 2 }, bcheese: { milk: 4 }, bread: { wheat: 3 }, cake: { egg: 2, wheat: 1, milk: 1 },
   cream: { milk: 2 }, icecream: { milk: 3, egg: 1 }, ghee: { butter: 2 } };
 const MACH = { dairy: ['butter', 'yogurt', 'bcheese', 'cream', 'icecream', 'ghee'], bakery: ['bread', 'cake'] };
@@ -53,8 +56,8 @@ const PRODK = ['feather', 'turkeyegg', 'duckegg', 'angora', 'truffle', 'wool', '
 const plotXY = i => i < 144 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 150 ? [75 + ((i - 144) % 3) * 4.4, -11 + Math.floor((i - 144) / 3) * 4.4] : [-108 + ((i - 150) % 3) * 4.4, 26 + Math.floor((i - 150) / 3) * 4.4];
 const landOwned = s => s.lo.filter(Boolean).length;
 const landCost = s => 100 + 10 * (landOwned(s) - START_LAND);
-const maxWorkers = s => 10 + (s.house >= 3 ? 10 : 0);
-const hireCost = s => 150 + 30 * Math.max(0, s.workers.length - 5);
+const maxWorkers = s => Infinity;
+const hireCost = s => 150 + 30 * Math.max(0, s.workers.length - 10);
 const rnd = (a, b) => a + Math.random() * (b - a);
 const send = (w, o) => w && w.readyState === 1 && w.send(JSON.stringify(o));
 const all = (r, o) => r.p.forEach(w => send(w, o));
@@ -73,8 +76,9 @@ const newState = (w) => {
     bikes: [{ id: 1001, k: 'bike', x: 5, z: 3.4, rider: null }, { id: 1002, k: 'bike', x: 6.8, z: 3.4, rider: null }], kids: [1, 2, 3].map(id => ({ id, follow: null, school: 0 })), kdays: 0, ord: { n: 0, i: 0, role: 0, c: 0 },
     out: [0, 0], wd: [[1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]], auto: { dairy: '', bakery: '' }, req: null,
     truck: { x: 12, z: -1, ry: 0, driver: null, pass: null, cargo: {} },
-    workers: Array.from({ length: w === undefined ? 5 : w }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })),
-    msg: 'مرحبًا! عندكما 5 عمال يعملون وحدهم، ويمكنكما شراء أي أرض بالنقر عليها.'
+    wild: WILDLIST.map((k, i) => ({ id: i, k, hp: WILD[k][0], res: 0 })),
+    workers: Array.from({ length: w === undefined ? 10 : w }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })),
+    msg: 'مرحبًا! عندكما 10 عمال يعملون وحدهم، ويمكنكما شراء أي أرض بالنقر عليها.'
   };
 };
 function loadSave(d) {
@@ -124,9 +128,14 @@ function tick(r) {
   r.at = (r.at || 0) + dt;
   if (r.at >= 6) { r.at = 0; for (const m in MACH) { const rc = RECIPES[s.auto[m]]; if (rc && MACH[m].includes(s.auto[m]) && Object.keys(rc).every(k => s.stock[k] >= rc[k])) { for (const k in rc) s.stock[k] -= rc[k]; s.stock[s.auto[m]]++; } } }
   if (s.req && s.time > s.req.exp) { s.req = null; s.msg = 'غادر الجار دون جواب'; }
+  s.wild.forEach(w => { if (w.hp <= 0 && s.time >= w.res) w.hp = WILD[w.k][0]; });
   s.kids.forEach(k => { if (k.school && s.time >= k.school) { k.school = 0; s.kdays++; s.msg = 'عاد الأطفال من المدرسة'; } });
   r.rq = (r.rq === undefined ? 80 : r.rq) - dt;
-  if (!s.req && r.rq <= 0) { r.rq = rnd(100, 170); const ns = [0, 1].filter(n => !s.own[n]); if (ns.length) { const n = ns[Math.floor(Math.random() * ns.length)], item = REQITEMS[Math.floor(Math.random() * REQITEMS.length)], qty = 4 + Math.floor(Math.random() * 7); s.req = { n, item, qty, reward: Math.round(qty * BASE[item] * 1.6), exp: s.time + 75 }; s.msg = 'الجار جاء يطلب منكما شيئاً'; } }
+  if (!s.req && r.rq <= 0) { r.rq = rnd(100, 170); const ns = [0, 1].filter(n => !s.own[n]); if (ns.length) {
+      const n = ns[Math.floor(Math.random() * ns.length)], ks = [...new Set(s.animals.filter(a => a.rider == null && a.rider2 == null).map(a => a.k))];
+      if (ks.length && Math.random() < 0.45) { const k = ks[Math.floor(Math.random() * ks.length)], have = s.animals.filter(a => a.k === k && a.rider == null && a.rider2 == null).length, qty = 1 + Math.floor(Math.random() * Math.min(3, have)); s.req = { n, type: 'animal', item: k, qty, reward: Math.round(qty * ANI[k][0] * 1.4), exp: s.time + 75 }; s.msg = 'الجار جاء يريد شراء حيوانات'; }
+      else { const item = REQITEMS[Math.floor(Math.random() * REQITEMS.length)], qty = 4 + Math.floor(Math.random() * 7); s.req = { n, type: 'item', item, qty, reward: Math.round(qty * BASE[item] * 1.6), exp: s.time + 75 }; s.msg = 'الجار جاء يطلب منكما شيئاً'; }
+    } }
   if ((r.tc = (r.tc || 0) + 1) % 2 === 0) all(r, { t: 'state', s });
 }
 const sellKeys = (s, keys) => { let v = 0; keys.forEach(k => { v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }); s.money += v; return v; };
@@ -198,7 +207,7 @@ wss.on('connection', ws => {
     let m; try { m = JSON.parse(d); } catch { return; }
     if (m.t === 'create') {
       let c; do { c = Math.random().toString(36).slice(2, 6).toUpperCase(); } while (rooms[c]);
-      rooms[c] = { p: [ws], s: m.save ? loadSave(m.save) : newState(Math.max(0, Math.min(8, m.w === undefined ? 5 : m.w | 0))), lock: new Set(), idc: 0, rt: 100, rl: 0, hv: 0, day: 0, rg: Array(NTREES).fill(0), gc: [0, 0] };
+      rooms[c] = { p: [ws], s: m.save ? loadSave(m.save) : newState(10), lock: new Set(), idc: 0, rt: 100, rl: 0, hv: 0, day: 0, rg: Array(NTREES).fill(0), gc: [0, 0] };
       rooms[c].idc = rooms[c].s.animals.length; ws.room = c; ws.role = m.c === 1 ? 1 : 0;
       return send(ws, { t: 'joined', code: c, role: ws.role });
     }
@@ -241,12 +250,9 @@ wss.on('connection', ws => {
       s.money -= 12; s.feed = Math.min(80, s.feed + 10); s.msg = 'تمت إضافة علف إلى المخزن';
     } else if (m.t === 'buyAnimal') {
       const a = ANI[m.k]; if (!a || s.money < a[0]) return;
-      if (s.animals.filter(x => x.k === m.k).length >= capOf(s, m.k)) { s.msg = 'حظيرة هذا الحيوان ممتلئة. وسّعوها'; }
-      else {
-        s.money -= a[0]; const [cx, cz] = ENC[m.k];
-        s.animals.push({ id: ++r.idc, k: m.k, x: cx + rnd(-3.2, 3.2), z: cz + rnd(-3.2, 3.2), t: 0, rider: null, rider2: null });
-        s.msg = who + ' اشترى حيوانًا جديدًا';
-      }
+      s.money -= a[0]; const [cx, cz] = ENC[m.k];
+      s.animals.push({ id: ++r.idc, k: m.k, x: cx + rnd(-4.5, 4.5), z: cz + rnd(-4.5, 4.5), t: 0, rider: null, rider2: null });
+      s.msg = who + ' اشترى حيوانًا جديدًا';
     } else if (m.t === 'enlarge') {
       const k = m.k, u = s.up[k], cost = 150 * ((u || 0) + 1);
       if (!(k in ANI) || u >= 3 || s.money < cost || s.stock.wood < 10) return;
@@ -320,7 +326,11 @@ wss.on('connection', ws => {
       else { let v = 0; for (const k in t.cargo) { v += Math.round(t.cargo[k] * BASE[k] * s.mult[k] * 1.3); t.cargo[k] = 0; } if (!v) return; s.money += v; s.msg = 'بعتم البضاعة للسفينة بمبلغ ' + v; }
     } else if (m.t === 'reqYes' || m.t === 'reqNo') {
       const q = s.req; if (!q) return;
-      if (m.t === 'reqYes') { if (s.stock[q.item] < q.qty) { s.msg = 'لا تملكون الكمية المطلوبة'; } else { s.stock[q.item] -= q.qty; s.money += q.reward; addRel(s, q.n, 8); s.req = null; if (s.msg.indexOf('صديقًا') < 0) s.msg = 'وافقتما على طلب الجار وكسبتما ' + q.reward; } }
+      if (m.t === 'reqYes' && q.type === 'animal') {
+        const mine = s.animals.filter(a => a.k === q.item && a.rider == null && a.rider2 == null);
+        if (mine.length < q.qty) { s.msg = 'لا تملكون العدد المطلوب من الحيوانات'; }
+        else { const rm = new Set(mine.slice(0, q.qty).map(a => a.id)); s.animals = s.animals.filter(a => !rm.has(a.id)); s.money += q.reward; addRel(s, q.n, 8); s.req = null; s.msg = 'بعتما الحيوانات للجار وكسبتما ' + q.reward; }
+      } else if (m.t === 'reqYes') { if (s.stock[q.item] < q.qty) { s.msg = 'لا تملكون الكمية المطلوبة'; } else { s.stock[q.item] -= q.qty; s.money += q.reward; addRel(s, q.n, 8); s.req = null; if (s.msg.indexOf('صديقًا') < 0) s.msg = 'وافقتما على طلب الجار وكسبتما ' + q.reward; } }
       else { s.rel[q.n] = Math.max(0, s.rel[q.n] - 3); s.req = null; s.msg = 'رفضتما طلب الجار'; }
     } else if (m.t === 'ride') {
       const a = s.animals.find(x => x.id === m.id) || s.bikes.find(x => x.id === m.id);
@@ -340,6 +350,13 @@ wss.on('connection', ws => {
     } else if (m.t === 'order') {
       const i = m.i | 0, pr = MENU[i]; if (pr === undefined || s.money < pr) return;
       s.money -= pr; s.ord = { n: s.ord.n + 1, i, role: ws.role, c: m.c | 0 }; s.msg = who + ' طلب من المقهى';
+    } else if (m.t === 'hunt') {
+      if (now - (ws.hc || 0) < 350) return; const w = s.wild[m.i | 0]; if (!w || w.hp <= 0) return; ws.hc = now; w.hp--;
+      if (w.hp <= 0) { w.res = s.time + 150; const lt = WILD[w.k][1]; for (const k in lt) s.stock[k] += lt[k]; s.msg = who + ' اصطاد ' + w.k + ' بالرمح وحصل على غنيمة'; }
+    } else if (m.t === 'buyFrom') {
+      const n = m.n | 0; if (!(n === 0 || n === 1) || s.own[n] || !NGOODS[n].includes(m.k)) return;
+      const pr = Math.round(5 * BASE[m.k] * s.mult[m.k] * 1.25 * (s.rel[n] >= 70 ? 0.7 : s.rel[n] >= 30 ? 0.85 : 1)); if (s.money < pr) return;
+      s.money -= pr; s.stock[m.k] += 5; s.msg = 'اشتريتم 5 من الجار مقابل ' + pr;
     } else if (m.t === 'greet') {
       const n = m.n | 0; if (!(n === 0 || n === 1) || s.own[n]) return;
       if (now - r.gc[n] < 30000) s.msg = 'حيّيتما الجار قبل قليل';
