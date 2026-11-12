@@ -1,7 +1,15 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { WebSocketServer } = require('ws');
 const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
 const server = http.createServer((q, r) => {
+  const u = (q.url || '/').split('?')[0], ext = path.extname(u).toLowerCase();
+  if (MIME[ext]) {
+    return fs.readFile(path.join(__dirname, 'public', path.basename(u)), (e, d) => {
+      if (e) { r.writeHead(404); return r.end(); }
+      r.writeHead(200, { 'Content-Type': MIME[ext], 'Cache-Control': 'public, max-age=3600' }); r.end(d);
+    });
+  }
   r.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   r.end(html);
 });
@@ -16,7 +24,9 @@ const ANI = {
   cow: [420, 'milk', 20, 2], horse_w: [900, null, 0, 0], horse_b: [900, null, 0, 0], donkey: [450, 'dmilk', 30, 1.5],
   camel: [1200, 'cmilk', 26, 2.5], llama: [600, 'alpaca', 28, 1.5]
 };
-const RIDE = { horse_w: 1, horse_b: 1, donkey: 1, camel: 1 };
+const RIDE = { horse_w: 1, horse_b: 1, donkey: 1, camel: 1, bike: 1 };
+const MENU = [12, 8, 10, 20, 18];
+const riding = (s, role) => s.animals.some(a => a.rider === role || a.rider2 === role) || s.bikes.some(b => b.rider === role) || s.truck.driver === role || s.truck.pass === role;
 const ENC = {
   chicken: [16, 16], duck: [30, 16], goose: [44, 16], turkey: [58, 16], rabbit: [16, 30], pig: [30, 30], sheep: [44, 30], goat: [58, 30],
   cow: [16, 44], llama: [30, 44], camel: [44, 44], donkey: [58, 44], horse_w: [30, 58], horse_b: [30, 58]
@@ -34,13 +44,13 @@ const FLOW = { rose: 10, tulip: 8, sunflower: 7, daisy: 5, lavender: 9, lily: 12
   apple: 60, orange: 60, olive: 55, cypress: 40, palm: 80, cherry: 90, lemon: 60 };
 const HOUSE = [[300, 20], [500, 40], [800, 30]];
 const PRICE = [2500, 3500];
-const PLOTS = 108, NTREES = 28, LAND = 96, START_LAND = 48;
-const TREEPOS = [[-30,-30],[-20,-34],[-12,-40],[14,-38],[26,-36],[60,-24],[66,-14],[68,-30],[-44,-6],[-46,-18],[-44,8],[63,-8],[74,30],[74,44],[78,56],[4,70],[18,74],[36,74],[54,72],[8,84],[2,96],[-30,100],[-46,46],[-46,30],[-6,-32],[40,-40],[-52,-34],[-20,104]];
+const PLOTS = 156, NTREES = 28, LAND = 144, START_LAND = 48;
+const TREEPOS = [[-30,-30],[-20,-34],[-12,-40],[14,-38],[26,-36],[60,-24],[66,-14],[68,-30],[-44,-6],[-46,-18],[-44,8],[63,-8],[74,30],[74,44],[78,56],[4,70],[18,74],[36,74],[54,72],[8,84],[2,96],[10,100],[-46,46],[-46,30],[-6,-32],[40,-40],[-52,-34],[4,112]];
 const WROLES = ['farmer', 'herder', 'buyer', 'woodcutter'];
 const WNAMES = ['سعيد','خالد','ماهر','نبيل','وليد','حسن','رامي','طارق','جميل','فهد','سامر','بلال','ياسر','زياد','عادل','مراد','أنس','هاني','كمال','مروان'];
 const CROPK = ['wheat', 'corn', 'tomato', 'potato'];
 const PRODK = ['feather', 'turkeyegg', 'duckegg', 'angora', 'truffle', 'wool', 'cheese', 'dmilk', 'cmilk', 'alpaca'];
-const plotXY = i => i < 96 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 102 ? [75 + ((i - 96) % 3) * 4.4, -11 + Math.floor((i - 96) / 3) * 4.4] : [-108 + ((i - 102) % 3) * 4.4, 26 + Math.floor((i - 102) / 3) * 4.4];
+const plotXY = i => i < 144 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 150 ? [75 + ((i - 144) % 3) * 4.4, -11 + Math.floor((i - 144) / 3) * 4.4] : [-108 + ((i - 150) % 3) * 4.4, 26 + Math.floor((i - 150) / 3) * 4.4];
 const landOwned = s => s.lo.filter(Boolean).length;
 const landCost = s => 100 + 10 * (landOwned(s) - START_LAND);
 const maxWorkers = s => 10 + (s.house >= 3 ? 10 : 0);
@@ -48,7 +58,7 @@ const hireCost = s => 150 + 30 * Math.max(0, s.workers.length - 5);
 const rnd = (a, b) => a + Math.random() * (b - a);
 const send = (w, o) => w && w.readyState === 1 && w.send(JSON.stringify(o));
 const all = (r, o) => r.p.forEach(w => send(w, o));
-const avail = (s, i) => i < LAND ? !!s.lo[i] : i < 102 ? !!s.own[0] : !!s.own[1];
+const avail = (s, i) => i < LAND ? !!s.lo[i] : i < 150 ? !!s.own[0] : !!s.own[1];
 const capOf = (s, k) => 6 + 6 * (s.up[k] || 0) + 4 * (s.own[0] + s.own[1]);
 const newState = (w) => {
   const stock = {}, mult = {}, inv = {}, up = {};
@@ -60,6 +70,7 @@ const newState = (w) => {
     plots: Array.from({ length: PLOTS }, () => ({ c: '', p: 0, w: 0 })),
     garden: Array(100).fill(''), trees: Array(NTREES).fill(3), animals: [], enemies: [],
     rel: [0, 0], own: [0, 0], lo: Array.from({ length: LAND }, (_, i) => i < START_LAND ? 1 : 0),
+    bikes: [{ id: 1001, k: 'bike', x: 5, z: 3.4, rider: null }, { id: 1002, k: 'bike', x: 6.8, z: 3.4, rider: null }], kids: [1, 2, 3].map(id => ({ id, follow: null, school: 0 })), kdays: 0, ord: { n: 0, i: 0, role: 0, c: 0 },
     out: [0, 0], wd: [[1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]], auto: { dairy: '', bakery: '' }, req: null,
     truck: { x: 12, z: -1, ry: 0, driver: null, pass: null, cargo: {} },
     workers: Array.from({ length: w === undefined ? 5 : w }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })),
@@ -79,7 +90,8 @@ function loadSave(d) {
   for (let i = 0; i < NTREES; i++) b.trees[i] = num(d.trees && d.trees[i], 3, 0, 3) | 0;
   if (Array.isArray(d.lo)) for (let i = 0; i < LAND; i++) b.lo[i] = d.lo[i] ? 1 : 0;
   b.rel = [num(d.rel && d.rel[0], 0, 0, 100), num(d.rel && d.rel[1], 0, 0, 100)]; b.own = [d.own && d.own[0] ? 1 : 0, d.own && d.own[1] ? 1 : 0];
-  b.animals = (Array.isArray(d.animals) ? d.animals : []).slice(0, 200).filter(a => a && ANI[a.k]).map((a, i) => ({ id: i + 1, k: a.k, x: num(a.x, ENC[a.k][0], -300, 300), z: num(a.z, ENC[a.k][1], -300, 300), t: 0, rider: null }));
+  b.animals = (Array.isArray(d.animals) ? d.animals : []).slice(0, 200).filter(a => a && ANI[a.k]).map((a, i) => ({ id: i + 1, k: a.k, x: num(a.x, ENC[a.k][0], -300, 300), z: num(a.z, ENC[a.k][1], -300, 300), t: 0, rider: null, rider2: null }));
+  if (d.kdays) b.kdays = num(d.kdays, 0, 0, 1e6) | 0;
   b.workers = (Array.isArray(d.workers) ? d.workers : []).slice(0, 20).filter(w => w && WROLES.includes(w.role)).map((w, i) => ({ id: i + 1, role: w.role, x: 0, z: 1, tx: 0, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.3 }));
   if (d.wd) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) b.wd[r][i] = d.wd[r] && d.wd[r][i] ? 1 : 0;
   if (d.out) b.out = [num(d.out[0], 0, 0, 5) | 0, num(d.out[1], 0, 0, 5) | 0];
@@ -112,6 +124,7 @@ function tick(r) {
   r.at = (r.at || 0) + dt;
   if (r.at >= 6) { r.at = 0; for (const m in MACH) { const rc = RECIPES[s.auto[m]]; if (rc && MACH[m].includes(s.auto[m]) && Object.keys(rc).every(k => s.stock[k] >= rc[k])) { for (const k in rc) s.stock[k] -= rc[k]; s.stock[s.auto[m]]++; } } }
   if (s.req && s.time > s.req.exp) { s.req = null; s.msg = 'غادر الجار دون جواب'; }
+  s.kids.forEach(k => { if (k.school && s.time >= k.school) { k.school = 0; s.kdays++; s.msg = 'عاد الأطفال من المدرسة'; } });
   r.rq = (r.rq === undefined ? 80 : r.rq) - dt;
   if (!s.req && r.rq <= 0) { r.rq = rnd(100, 170); const ns = [0, 1].filter(n => !s.own[n]); if (ns.length) { const n = ns[Math.floor(Math.random() * ns.length)], item = REQITEMS[Math.floor(Math.random() * REQITEMS.length)], qty = 4 + Math.floor(Math.random() * 7); s.req = { n, item, qty, reward: Math.round(qty * BASE[item] * 1.6), exp: s.time + 75 }; s.msg = 'الجار جاء يطلب منكما شيئاً'; } }
   if ((r.tc = (r.tc || 0) + 1) % 2 === 0) all(r, { t: 'state', s });
@@ -198,7 +211,9 @@ wss.on('connection', ws => {
     }
     const r = rooms[ws.room]; if (!r) return;
     const s = r.s, other = r.p.find(w => w !== ws);
-    if (m.t === 'pos') { ws.x = +m.x || 0; ws.z = +m.z || 0; if (s.truck.driver === ws.role) { s.truck.x = ws.x; s.truck.z = ws.z; s.truck.ry = +m.ry || 0; } return send(other, { t: 'pos', x: m.x, z: m.z, ry: m.ry }); }
+    if (m.t === 'pos') { ws.x = +m.x || 0; ws.z = +m.z || 0; if (s.truck.driver === ws.role) { s.truck.x = ws.x; s.truck.z = ws.z; s.truck.ry = +m.ry || 0; }
+      s.animals.forEach(a => { if (a.rider === ws.role) { a.x = ws.x; a.z = ws.z; } }); s.bikes.forEach(b => { if (b.rider === ws.role) { b.x = ws.x; b.z = ws.z; } });
+      return send(other, { t: 'pos', x: m.x, z: m.z, ry: m.ry, sit: m.sit }); }
     if (m.t === 'chat') {
       const tx = String(m.text || '').trim().slice(0, 80);
       if (tx) all(r, { t: 'chat', role: ws.role, text: tx });
@@ -229,7 +244,7 @@ wss.on('connection', ws => {
       if (s.animals.filter(x => x.k === m.k).length >= capOf(s, m.k)) { s.msg = 'حظيرة هذا الحيوان ممتلئة. وسّعوها'; }
       else {
         s.money -= a[0]; const [cx, cz] = ENC[m.k];
-        s.animals.push({ id: ++r.idc, k: m.k, x: cx + rnd(-3.2, 3.2), z: cz + rnd(-3.2, 3.2), t: 0, rider: null });
+        s.animals.push({ id: ++r.idc, k: m.k, x: cx + rnd(-3.2, 3.2), z: cz + rnd(-3.2, 3.2), t: 0, rider: null, rider2: null });
         s.msg = who + ' اشترى حيوانًا جديدًا';
       }
     } else if (m.t === 'enlarge') {
@@ -286,7 +301,7 @@ wss.on('connection', ws => {
       s.out[ws.role] = o; s.msg = who + ' غيّر ملابسه';
     } else if (m.t === 'board') {
       const t = s.truck; if (t.driver === ws.role || t.pass === ws.role || Math.hypot((ws.x || 0) - t.x, (ws.z || 0) - t.z) > 8) return;
-      if (s.animals.some(a => a.rider === ws.role)) return;
+      if (riding(s, ws.role)) return;
       if (t.driver === null) { t.driver = ws.role; s.msg = who + ' صعد أولاً وسيقود الشاحنة'; } else if (t.pass === null) { t.pass = ws.role; s.msg = who + ' ركب بجانب السائق'; } else return;
     } else if (m.t === 'exitTruck') {
       const t = s.truck;
@@ -308,13 +323,23 @@ wss.on('connection', ws => {
       if (m.t === 'reqYes') { if (s.stock[q.item] < q.qty) { s.msg = 'لا تملكون الكمية المطلوبة'; } else { s.stock[q.item] -= q.qty; s.money += q.reward; addRel(s, q.n, 8); s.req = null; if (s.msg.indexOf('صديقًا') < 0) s.msg = 'وافقتما على طلب الجار وكسبتما ' + q.reward; } }
       else { s.rel[q.n] = Math.max(0, s.rel[q.n] - 3); s.req = null; s.msg = 'رفضتما طلب الجار'; }
     } else if (m.t === 'ride') {
-      const a = s.animals.find(x => x.id === m.id);
-      if (!a || !RIDE[a.k] || a.rider !== null || s.animals.some(x => x.rider === ws.role)) return;
-      if (Math.hypot((ws.x || 0) - a.x, (ws.z || 0) - a.z) > 16) return;
-      if (s.truck.driver === ws.role || s.truck.pass === ws.role) return; a.rider = ws.role; s.msg = who + ' ركب';
+      const a = s.animals.find(x => x.id === m.id) || s.bikes.find(x => x.id === m.id);
+      if (!a || !RIDE[a.k] || riding(s, ws.role) || Math.hypot((ws.x || 0) - a.x, (ws.z || 0) - a.z) > 16) return;
+      if (a.rider === null) a.rider = ws.role; else if (a.rider2 === null) a.rider2 = ws.role; else return;
+      s.msg = who + ' ركب';
     } else if (m.t === 'dismount') {
-      const a = s.animals.find(x => x.rider === ws.role); if (!a) return;
-      a.rider = null; s.msg = who + ' نزل من المركوب';
+      const a = s.animals.find(x => x.rider === ws.role || x.rider2 === ws.role) || s.bikes.find(x => x.rider === ws.role); if (!a) return;
+      if (a.rider === ws.role) { if (a.rider2 !== undefined) { a.rider = a.rider2; a.rider2 = null; } else a.rider = null; } else a.rider2 = null;
+      s.msg = who + ' نزل';
+    } else if (m.t === 'kid') {
+      const k = s.kids[m.i | 0]; if (!k || k.school > s.time) return;
+      k.follow = k.follow === ws.role ? null : ws.role; s.msg = k.follow === null ? 'توقف الطفل' : 'الطفل يتبع ' + who;
+    } else if (m.t === 'school') {
+      let n = 0; s.kids.forEach(k => { if (k.follow === ws.role) { k.follow = null; k.school = s.time + 45; n++; } });
+      if (!n) return; s.msg = 'دخل ' + n + ' من الأطفال المدرسة';
+    } else if (m.t === 'order') {
+      const i = m.i | 0, pr = MENU[i]; if (pr === undefined || s.money < pr) return;
+      s.money -= pr; s.ord = { n: s.ord.n + 1, i, role: ws.role, c: m.c | 0 }; s.msg = who + ' طلب من المقهى';
     } else if (m.t === 'greet') {
       const n = m.n | 0; if (!(n === 0 || n === 1) || s.own[n]) return;
       if (now - r.gc[n] < 30000) s.msg = 'حيّيتما الجار قبل قليل';
