@@ -229,6 +229,7 @@ wss.on('connection', ws => {
       return;
     }
     if (m.t === 'save') return send(ws, { t: 'saved', data: s });
+    if (m.t === 'rtc') return send(other, { t: 'rtc', d: m.d });
     if (r.p.length < 2) return;
     const who = NAMES[ws.role], now = Date.now();
     if (m.t === 'plant') {
