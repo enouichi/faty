@@ -53,6 +53,21 @@ const WROLES = ['farmer', 'herder', 'buyer', 'woodcutter'];
 const WNAMES = ['سعيد','خالد','ماهر','نبيل','وليد','حسن','رامي','طارق','جميل','فهد','سامر','بلال','ياسر','زياد','عادل','مراد','أنس','هاني','كمال','مروان'];
 const CROPK = ['wheat', 'corn', 'tomato', 'potato'];
 const PRODK = ['feather', 'turkeyegg', 'duckegg', 'angora', 'truffle', 'wool', 'cheese', 'dmilk', 'cmilk', 'alpaca'];
+const TOOLK = { plow: 1, can: 0.8, scythe: 1, axe: 0.7, spear: 0.9 }, TCOST = [300, 500, 800, 1200, 2000];
+const toolCost = (k, lvl) => ({ money: Math.round(TCOST[lvl] * TOOLK[k]), wood: 5 * (lvl + 1) });
+const WF = { clear: 1, cloudy: 0.92, windy: 1.08 };
+const MIS = { harvest: { n: [8, 20], m: 12, x: 3 }, plant: { n: [10, 25], m: 6, x: 1.5 }, sell: { n: [300, 900], m: 0.18, x: 0.05 }, craft: { n: [3, 8], m: 40, x: 8 }, buyAnimal: { n: [1, 3], m: 80, x: 15 }, hunt: { n: [1, 2], m: 150, x: 25 }, order: { n: [1, 3], m: 40, x: 6 }, school: { n: [1, 2], m: 120, x: 15 }, chop: { n: [3, 6], m: 25, x: 4 }, request: { n: [1, 2], m: 100, x: 12 } };
+function newMission(avoid) {
+  const ks = Object.keys(MIS).filter(k => !avoid.includes(k)), k = ks[Math.floor(Math.random() * ks.length)], d = MIS[k];
+  let n = Math.round(d.n[0] + Math.random() * (d.n[1] - d.n[0])); if (k === 'sell') n = Math.round(n / 50) * 50;
+  return { k, n, p: 0, m: Math.round(n * d.m), x: Math.round(n * d.x), c: 0 };
+}
+function newMissions() { const out = []; for (let i = 0; i < 3; i++) out.push(newMission(out.map(x => x.k))); return out; }
+function mis(s, k, n) { n = n === undefined ? 1 : n; s.missions.forEach(m => { if (m.k === k && !m.c) m.p = Math.min(m.n, m.p + n); }); }
+function addXp(s, n) {
+  s.xp += n; const lv = Math.floor(Math.sqrt(s.xp / 50)) + 1;
+  if (lv > s.lvl) { for (let l = s.lvl + 1; l <= lv; l++) s.money += 150 * l; s.lvl = lv; s.msg = 'ارتفع مستوى المزرعة إلى ' + lv + '! مكافأة ' + 150 * lv; }
+}
 const plotXY = i => i < 144 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 150 ? [75 + ((i - 144) % 3) * 4.4, -11 + Math.floor((i - 144) / 3) * 4.4] : [-108 + ((i - 150) % 3) * 4.4, 26 + Math.floor((i - 150) / 3) * 4.4];
 const landOwned = s => s.lo.filter(Boolean).length;
 const landCost = s => 100 + 10 * (landOwned(s) - START_LAND);
@@ -74,6 +89,7 @@ const newState = (w) => {
     garden: Array(100).fill(''), trees: Array(NTREES).fill(3), animals: [], enemies: [],
     rel: [0, 0], own: [0, 0], lo: Array.from({ length: LAND }, (_, i) => i < START_LAND ? 1 : 0),
     bikes: [{ id: 1001, k: 'bike', x: 5, z: 3.4, rider: null }, { id: 1002, k: 'bike', x: 6.8, z: 3.4, rider: null }], kids: [1, 2, 3].map(id => ({ id, follow: null, school: 0 })), kdays: 0, ord: { n: 0, i: 0, role: 0, c: 0 },
+    xp: 0, lvl: 1, tools: { plow: 0, can: 0, scythe: 0, axe: 0, spear: 0 }, missions: newMissions(), mday: 0, weather: { t: 'clear', until: 90 },
     out: [0, 0], wd: [[1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]], auto: { dairy: '', bakery: '' }, req: null,
     truck: { x: 12, z: -1, ry: 0, driver: null, pass: null, cargo: {} },
     wild: WILDLIST.map((k, i) => ({ id: i, k, hp: WILD[k][0], res: 0 })),
@@ -100,6 +116,9 @@ function loadSave(d) {
   if (d.wd) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) b.wd[r][i] = d.wd[r] && d.wd[r][i] ? 1 : 0;
   if (d.out) b.out = [num(d.out[0], 0, 0, 5) | 0, num(d.out[1], 0, 0, 5) | 0];
   if (d.truck && d.truck.cargo) for (const k in BASE) b.truck.cargo[k] = num(d.truck.cargo[k], 0, 0, 1e6) | 0;
+  b.xp = num(d.xp, 0, 0, 1e9); b.lvl = Math.floor(Math.sqrt(b.xp / 50)) + 1;
+  if (d.tools) for (const k in b.tools) b.tools[k] = num(d.tools[k], 0, 0, 5) | 0;
+  if (Array.isArray(d.missions)) { const ms = d.missions.slice(0, 3).filter(m => m && MIS[m.k]).map(m => ({ k: m.k, n: num(m.n, 5, 1, 5000) | 0, p: num(m.p, 0, 0, 5000) | 0, m: num(m.m, 0, 0, 1e6) | 0, x: num(m.x, 0, 0, 1e6) | 0, c: 0 })); while (ms.length < 3) ms.push(newMission(ms.map(x => x.k))); b.missions = ms; }
   b.msg = 'تم تحميل اللعبة المحفوظة. أكملا من حيث توقفتما!'; return b;
 }
 function addRel(s, n, v) {
@@ -110,10 +129,12 @@ function addRel(s, n, v) {
 function tick(r) {
   const s = r.s, dt = 0.1;
   s.time += dt;
+  if (s.time >= s.weather.until) { const q = Math.random(); s.weather = { t: q < 0.5 ? 'clear' : q < 0.8 ? 'cloudy' : 'windy', until: s.time + rnd(90, 200) }; }
+  const md = Math.floor(s.time / 600); if (md !== s.mday) { s.mday = md; s.missions = newMissions(); s.msg = 'مهام جديدة اليوم!'; }
   const day = Math.floor(s.time / 120);
   if (day !== r.day) { r.day = day; for (const k in BASE) s.mult[k] = +(0.8 + Math.random() * 0.5).toFixed(2); }
   s.rain = false;
-  s.plots.forEach(p => { if (p.c && p.w && p.p < 100) p.p = Math.min(100, p.p + 100 / CROPS[p.c][2] * dt); });
+  s.plots.forEach(p => { if (p.c && p.w && p.p < 100) p.p = Math.min(100, p.p + 100 / CROPS[p.c][2] * dt * (1 + 0.1 * s.tools.plow) * WF[s.weather.t]); });
   const hb = 1 + 0.12 * Math.min(5, s.workers.filter(w => w.role === 'herder').length);
   s.animals.forEach(a => {
     const [, prod, cy, use] = ANI[a.k];
@@ -126,10 +147,10 @@ function tick(r) {
   s.trees.forEach((h, i) => { if (h <= 0 && s.time >= r.rg[i]) s.trees[i] = 3; });
   wtick(r, dt);
   r.at = (r.at || 0) + dt;
-  if (r.at >= 6) { r.at = 0; for (const m in MACH) { const rc = RECIPES[s.auto[m]]; if (rc && MACH[m].includes(s.auto[m]) && Object.keys(rc).every(k => s.stock[k] >= rc[k])) { for (const k in rc) s.stock[k] -= rc[k]; s.stock[s.auto[m]]++; } } }
+  if (r.at >= 6) { r.at = 0; for (const m in MACH) { const rc = RECIPES[s.auto[m]]; if (rc && MACH[m].includes(s.auto[m]) && Object.keys(rc).every(k => s.stock[k] >= rc[k])) { for (const k in rc) s.stock[k] -= rc[k]; s.stock[s.auto[m]]++; mis(s, 'craft'); addXp(s, 4); } } }
   if (s.req && s.time > s.req.exp) { s.req = null; s.msg = 'غادر الجار دون جواب'; }
   s.wild.forEach(w => { if (w.hp <= 0 && s.time >= w.res) w.hp = WILD[w.k][0]; });
-  s.kids.forEach(k => { if (k.school && s.time >= k.school) { k.school = 0; s.kdays++; s.msg = 'عاد الأطفال من المدرسة'; } });
+  s.kids.forEach(k => { if (k.school && s.time >= k.school) { k.school = 0; s.kdays++; mis(s, 'school'); addXp(s, 10); s.msg = 'عاد الأطفال من المدرسة'; } });
   r.rq = (r.rq === undefined ? 80 : r.rq) - dt;
   if (!s.req && r.rq <= 0) { r.rq = rnd(100, 170); const ns = [0, 1].filter(n => !s.own[n]); if (ns.length) {
       const n = ns[Math.floor(Math.random() * ns.length)], ks = [...new Set(s.animals.filter(a => a.rider == null && a.rider2 == null).map(a => a.k))];
@@ -138,7 +159,7 @@ function tick(r) {
     } }
   if ((r.tc = (r.tc || 0) + 1) % 2 === 0) all(r, { t: 'state', s });
 }
-const sellKeys = (s, keys) => { let v = 0; keys.forEach(k => { v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }); s.money += v; return v; };
+const sellKeys = (s, keys) => { let v = 0; keys.forEach(k => { v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }); s.money += v; mis(s, 'sell', v); addXp(s, Math.floor(v / 40)); return v; };
 const near = (list, w) => { let b = null, bd = 1e9; list.forEach(i => { const [x, z] = plotXY(i); const d = Math.hypot(x - w.x, z - w.z); if (d < bd) { bd = d; b = i; } }); return b; };
 function setTask(r, w, act, tx, tz, work, i) {
   w.act = act; w.tx = tx; w.tz = tz; w.v++; w.i = i === undefined ? -1 : i;
@@ -160,7 +181,7 @@ function assign(r, w) {
     let i = near(ready, w);
     if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'harvest', x, z, 1.6, i); }
     i = near(dry, w);
-    if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'water', x, z, 1.2, i); }
+    if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'water', x, z, Math.max(0.3, 1.2 * (1 - 0.15 * s.tools.can)), i); }
     if (s.money >= 12) { i = near(empty, w); if (i !== null && i !== undefined) { const [x, z] = plotXY(i); return setTask(r, w, 'plant', x, z, 1.6, i); } }
     return idle(r, w);
   }
@@ -189,14 +210,14 @@ function assign(r, w) {
 function finish(r, w) {
   const s = r.s, p = w.i >= 0 ? s.plots[w.i] : null;
   w.x = w.tx; w.z = w.tz;
-  if (w.act === 'plant' && p && avail(s, w.i) && !p.c) { const k = Math.random() < .45 ? 'corn' : Math.random() < .5 ? 'tomato' : Math.random() < .5 ? 'wheat' : 'potato'; const c = CROPS[k][0]; if (s.money >= c) { s.money -= c; p.c = k; p.p = 0; p.w = 1; } }
+  if (w.act === 'plant' && p && avail(s, w.i) && !p.c) { const k = Math.random() < .45 ? 'corn' : Math.random() < .5 ? 'tomato' : Math.random() < .5 ? 'wheat' : 'potato'; const c = CROPS[k][0]; if (s.money >= c) { s.money -= c; p.c = k; p.p = 0; p.w = 1; mis(s, 'plant'); addXp(s, 1); } }
   else if (w.act === 'water' && p && p.c && !p.w) p.w = 1;
-  else if (w.act === 'harvest' && p && p.c && p.p >= 100) { s.stock[p.c] += 4; p.c = ''; p.p = 0; p.w = 0; }
+  else if (w.act === 'harvest' && p && p.c && p.p >= 100) { s.stock[p.c] += 4 + s.tools.scythe; p.c = ''; p.p = 0; p.w = 0; mis(s, 'harvest'); addXp(s, 3); }
   else if (w.act === 'sellcrops') sellKeys(s, CROPK);
   else if (w.act === 'sellprod') sellKeys(s, PRODK);
   else if (w.act === 'feed') { for (let n = 0; n < 4 && s.money >= 12 && s.feed < 80; n++) { s.money -= 12; s.feed = Math.min(80, s.feed + 10); } }
-  else if (w.act === 'buyland' && w.i >= 0 && !s.lo[w.i] && s.money >= landCost(s)) { s.money -= landCost(s); s.lo[w.i] = 1; s.msg = 'العامل ' + WNAMES[(w.id - 1) % 20] + ' اشترى قطعة أرض جديدة'; }
-  else if (w.act === 'chop' && w.i >= 0 && s.trees[w.i] > 0) { s.trees[w.i] = 0; s.stock.wood += 3; r.rg[w.i] = s.time + 90; }
+  else if (w.act === 'buyland' && w.i >= 0 && !s.lo[w.i] && s.money >= landCost(s)) { s.money -= landCost(s); s.lo[w.i] = 1; addXp(s, 5); s.msg = 'العامل ' + WNAMES[(w.id - 1) % 20] + ' اشترى قطعة أرض جديدة'; }
+  else if (w.act === 'chop' && w.i >= 0 && s.trees[w.i] > 0) { s.trees[w.i] = 0; s.stock.wood += 3 + Math.floor(s.tools.axe / 2); r.rg[w.i] = s.time + 90; mis(s, 'chop'); addXp(s, 2); }
   release(r, w); w.act = '';
 }
 function wtick(r, dt) { r.s.workers.forEach(w => { if (w.busy > 0) { w.busy -= dt; if (w.busy <= 0) finish(r, w); } else assign(r, w); }); }
@@ -235,17 +256,19 @@ wss.on('connection', ws => {
     if (m.t === 'plant') {
       const p = s.plots[m.i], c = CROPS[m.c];
       if (!p || !c || !avail(s, m.i) || p.c || s.money < c[0]) return;
-      s.money -= c[0]; p.c = m.c; p.p = 0; p.w = s.rain ? 1 : 0; s.msg = who + ' زرع ' + m.c;
+      s.money -= c[0]; p.c = m.c; p.p = 0; p.w = s.rain ? 1 : 0; mis(s, 'plant'); addXp(s, 1); s.msg = who + ' زرع ' + m.c;
     } else if (m.t === 'water') {
       const p = s.plots[m.i]; if (!p || !avail(s, m.i) || !p.c || p.w) return;
-      p.w = 1; s.msg = who + ' سقى الأرض';
+      p.w = 1; const [px, pz] = plotXY(m.i);
+      if (s.tools.can > 0) s.plots.map((q, j) => ({ q, j, d: Math.hypot(plotXY(j)[0] - px, plotXY(j)[1] - pz) })).filter(o => o.j !== m.i && o.q.c && !o.q.w && avail(s, o.j) && o.d < 12).sort((a, b) => a.d - b.d).slice(0, s.tools.can).forEach(o => { o.q.w = 1; });
+      s.msg = who + ' سقى الأرض';
     } else if (m.t === 'harvest') {
       const p = s.plots[m.i]; if (!p || !avail(s, m.i) || !p.c || p.p < 100) return;
-      s.stock[p.c] += 4; s.msg = who + ' حصد المحصول'; p.c = ''; p.p = 0; p.w = 0;
+      s.stock[p.c] += 4 + s.tools.scythe; mis(s, 'harvest'); addXp(s, 3); s.msg = who + ' حصد المحصول'; p.c = ''; p.p = 0; p.w = 0;
     } else if (m.t === 'sell') {
       let v = 0;
       for (const k in s.stock) { if ((m.g === 'wood') !== (k === 'wood')) continue; v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }
-      if (!v) return; s.money += v; s.msg = 'تم البيع بمبلغ ' + v;
+      if (!v) return; s.money += v; mis(s, 'sell', v); addXp(s, Math.floor(v / 40)); s.msg = 'تم البيع بمبلغ ' + v;
     } else if (m.t === 'feed') {
       if (s.money < 12 || s.feed >= 80) return;
       s.money -= 12; s.feed = Math.min(80, s.feed + 10); s.msg = 'تمت إضافة علف إلى المخزن';
@@ -253,7 +276,7 @@ wss.on('connection', ws => {
       const a = ANI[m.k]; if (!a || s.money < a[0]) return;
       s.money -= a[0]; const [cx, cz] = ENC[m.k];
       s.animals.push({ id: ++r.idc, k: m.k, x: cx + rnd(-4.5, 4.5), z: cz + rnd(-4.5, 4.5), t: 0, rider: null, rider2: null });
-      s.msg = who + ' اشترى حيوانًا جديدًا';
+      mis(s, 'buyAnimal'); addXp(s, 3); s.msg = who + ' اشترى حيوانًا جديدًا';
     } else if (m.t === 'enlarge') {
       const k = m.k, u = s.up[k], cost = 150 * ((u || 0) + 1);
       if (!(k in ANI) || u >= 3 || s.money < cost || s.stock.wood < 10) return;
@@ -262,7 +285,7 @@ wss.on('connection', ws => {
       const i = m.i | 0; if (!(i >= 0 && i < LAND)) return;
       const list = m.t === 'buyRow' ? [0, 1, 2, 3, 4, 5].map(c => Math.floor(i / 6) * 6 + c) : [i];
       let n = 0; list.forEach(j => { if (!s.lo[j] && s.money >= landCost(s)) { s.money -= landCost(s); s.lo[j] = 1; n++; } });
-      if (!n) return; s.msg = who + ' اشترى ' + (n > 1 ? n + ' قطع أرض' : 'قطعة أرض');
+      if (!n) return; addXp(s, 5 * n); s.msg = who + ' اشترى ' + (n > 1 ? n + ' قطع أرض' : 'قطعة أرض');
     } else if (m.t === 'hire') {
       if (!WROLES.includes(m.r) || s.workers.length >= maxWorkers(s) || s.money < hireCost(s)) return;
       s.money -= hireCost(s); const id = s.workers.reduce((a, w) => Math.max(a, w.id), 0) + 1;
@@ -275,8 +298,8 @@ wss.on('connection', ws => {
       s.money -= 150; s.hives++; s.msg = 'تم تركيب خلية نحل';
     } else if (m.t === 'chop') {
       if (now - (ws.cc || 0) < 450 || !(s.trees[m.i] > 0)) return;
-      ws.cc = now; s.trees[m.i]--;
-      if (s.trees[m.i] <= 0) { s.stock.wood += 3; r.rg[m.i] = s.time + 90; s.msg = who + ' قطع شجرة'; }
+      ws.cc = now; s.trees[m.i] = Math.max(0, s.trees[m.i] - (1 + (s.tools.axe >= 2) + (s.tools.axe >= 4)));
+      if (s.trees[m.i] <= 0) { s.stock.wood += 3 + Math.floor(s.tools.axe / 2); r.rg[m.i] = s.time + 90; mis(s, 'chop'); addXp(s, 2); s.msg = who + ' قطع شجرة'; }
     } else if (m.t === 'fish') {
       if (now - (ws.fc || 0) < 2500) return;
       ws.fc = now;
@@ -285,7 +308,7 @@ wss.on('connection', ws => {
       const rc = RECIPES[m.r]; if (!rc) return;
       for (const k in rc) if (s.stock[k] < rc[k]) return;
       for (const k in rc) s.stock[k] -= rc[k];
-      s.stock[m.r]++; s.msg = who + ' صنع منتجًا جديدًا';
+      s.stock[m.r]++; mis(s, 'craft'); addXp(s, 4); s.msg = who + ' صنع منتجًا جديدًا';
     } else if (m.t === 'buyFlower') {
       const q = m.q === 5 ? 5 : 1, pr = FLOW[m.k];
       if (!pr || s.money < pr * q) return;
@@ -299,7 +322,13 @@ wss.on('connection', ws => {
       s.garden[c] = ''; s.msg = 'تمت إزالة النبتة';
     } else if (m.t === 'buildHouse') {
       const h = HOUSE[s.house]; if (!h || s.money < h[0] || s.stock.wood < h[1]) return;
-      s.money -= h[0]; s.stock.wood -= h[1]; s.house++; s.msg = s.house === 3 ? 'اكتمل بناء بيتكما!' : 'تمت مرحلة من بناء البيت';
+      s.money -= h[0]; s.stock.wood -= h[1]; s.house++; addXp(s, 25); s.msg = s.house === 3 ? 'اكتمل بناء بيتكما!' : 'تمت مرحلة من بناء البيت';
+    } else if (m.t === 'claim') {
+      const i = m.i | 0, ms = s.missions[i]; if (!ms || ms.c || ms.p < ms.n) return;
+      s.money += ms.m; s.msg = who + ' استلم مكافأة المهمة: ' + ms.m; const keep = s.missions.map(x => x.k); s.missions[i] = newMission(keep); addXp(s, ms.x);
+    } else if (m.t === 'upgrade') {
+      const k = m.k; if (!(k in s.tools) || s.tools[k] >= 5) return; const c = toolCost(k, s.tools[k]); if (s.money < c.money || s.stock.wood < c.wood) return;
+      s.money -= c.money; s.stock.wood -= c.wood; s.tools[k]++; addXp(s, 20); s.msg = 'تمت ترقية الأداة إلى المستوى ' + s.tools[k];
     } else if (m.t === 'auto') {
       if (!MACH[m.m] || !(m.r === '' || MACH[m.m].includes(m.r))) return; s.auto[m.m] = m.r; s.msg = m.r ? 'تشغيل الآلة تلقائياً' : 'تم إيقاف الآلة';
     } else if (m.t === 'outfit') {
@@ -324,14 +353,14 @@ wss.on('connection', ws => {
       const t = s.truck;
       if (!portDocked(s.time)) { s.msg = 'لا توجد سفينة راسية الآن'; }
       else if (Math.hypot(t.x - PORT[0], t.z - PORT[1]) > 28) { s.msg = 'الشاحنة بعيدة عن الميناء'; }
-      else { let v = 0; for (const k in t.cargo) { v += Math.round(t.cargo[k] * BASE[k] * s.mult[k] * 1.3); t.cargo[k] = 0; } if (!v) return; s.money += v; s.msg = 'بعتم البضاعة للسفينة بمبلغ ' + v; }
+      else { let v = 0; for (const k in t.cargo) { v += Math.round(t.cargo[k] * BASE[k] * s.mult[k] * 1.3); t.cargo[k] = 0; } if (!v) return; s.money += v; mis(s, 'sell', v); addXp(s, Math.floor(v / 40)); s.msg = 'بعتم البضاعة للسفينة بمبلغ ' + v; }
     } else if (m.t === 'reqYes' || m.t === 'reqNo') {
       const q = s.req; if (!q) return;
       if (m.t === 'reqYes' && q.type === 'animal') {
         const mine = s.animals.filter(a => a.k === q.item && a.rider == null && a.rider2 == null);
         if (mine.length < q.qty) { s.msg = 'لا تملكون العدد المطلوب من الحيوانات'; }
-        else { const rm = new Set(mine.slice(0, q.qty).map(a => a.id)); s.animals = s.animals.filter(a => !rm.has(a.id)); s.money += q.reward; addRel(s, q.n, 8); s.req = null; s.msg = 'بعتما الحيوانات للجار وكسبتما ' + q.reward; }
-      } else if (m.t === 'reqYes') { if (s.stock[q.item] < q.qty) { s.msg = 'لا تملكون الكمية المطلوبة'; } else { s.stock[q.item] -= q.qty; s.money += q.reward; addRel(s, q.n, 8); s.req = null; if (s.msg.indexOf('صديقًا') < 0) s.msg = 'وافقتما على طلب الجار وكسبتما ' + q.reward; } }
+        else { const rm = new Set(mine.slice(0, q.qty).map(a => a.id)); s.animals = s.animals.filter(a => !rm.has(a.id)); s.money += q.reward; addRel(s, q.n, 8); mis(s, 'request'); addXp(s, 10); s.req = null; s.msg = 'بعتما الحيوانات للجار وكسبتما ' + q.reward; }
+      } else if (m.t === 'reqYes') { if (s.stock[q.item] < q.qty) { s.msg = 'لا تملكون الكمية المطلوبة'; } else { s.stock[q.item] -= q.qty; s.money += q.reward; addRel(s, q.n, 8); mis(s, 'request'); addXp(s, 10); s.req = null; if (s.msg.indexOf('صديقًا') < 0) s.msg = 'وافقتما على طلب الجار وكسبتما ' + q.reward; } }
       else { s.rel[q.n] = Math.max(0, s.rel[q.n] - 3); s.req = null; s.msg = 'رفضتما طلب الجار'; }
     } else if (m.t === 'ride') {
       const a = s.animals.find(x => x.id === m.id) || s.bikes.find(x => x.id === m.id);
@@ -350,10 +379,10 @@ wss.on('connection', ws => {
       if (!n) return; s.msg = 'دخل ' + n + ' من الأطفال المدرسة';
     } else if (m.t === 'order') {
       const i = m.i | 0, pr = MENU[i]; if (pr === undefined || s.money < pr) return;
-      s.money -= pr; s.ord = { n: s.ord.n + 1, i, role: ws.role, c: m.c | 0 }; s.msg = who + ' طلب من المقهى';
+      s.money -= pr; mis(s, 'order'); addXp(s, 1); s.ord = { n: s.ord.n + 1, i, role: ws.role, c: m.c | 0 }; s.msg = who + ' طلب من المقهى';
     } else if (m.t === 'hunt') {
-      if (now - (ws.hc || 0) < 350) return; const w = s.wild[m.i | 0]; if (!w || w.hp <= 0) return; ws.hc = now; w.hp--;
-      if (w.hp <= 0) { w.res = s.time + 150; const lt = WILD[w.k][1]; for (const k in lt) s.stock[k] += lt[k]; s.msg = who + ' اصطاد ' + w.k + ' بالرمح وحصل على غنيمة'; }
+      if (now - (ws.hc || 0) < 350) return; const w = s.wild[m.i | 0]; if (!w || w.hp <= 0) return; ws.hc = now; w.hp -= 1 + (s.tools.spear >= 2) + (s.tools.spear >= 4);
+      if (w.hp <= 0) { w.res = s.time + 150; mis(s, 'hunt'); addXp(s, 15); const lt = WILD[w.k][1]; for (const k in lt) s.stock[k] += lt[k]; s.msg = who + ' اصطاد ' + w.k + ' بالرمح وحصل على غنيمة'; }
     } else if (m.t === 'buyFrom') {
       const n = m.n | 0; if (!(n === 0 || n === 1) || s.own[n] || !NGOODS[n].includes(m.k)) return;
       const pr = Math.round(5 * BASE[m.k] * s.mult[m.k] * 1.25 * (s.rel[n] >= 70 ? 0.7 : s.rel[n] >= 30 ? 0.85 : 1)); if (s.money < pr) return;
