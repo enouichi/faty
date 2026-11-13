@@ -241,6 +241,24 @@ wss.on('connection', ws => {
     }
     const r = rooms[ws.room]; if (!r) return;
     const s = r.s, other = r.p.find(w => w !== ws);
+    if(m.t==='flight'){
+      const seats=r.flightSeats||(r.flightSeats=[]);
+      if(r.p.length!==2||r.departure)return;
+      if(m.action==='board' && !seats.includes(ws.role) && Math.hypot((ws.x??(ws.role?1.5:-1.5))-3,(ws.z??2)-6)<6 &&
+         ![s.truck.driver,s.truck.pass].includes(ws.role) && ![...s.animals,...s.bikes].some(a=>a.rider===ws.role||a.rider2===ws.role))seats.push(ws.role);
+      if(m.action==='exit' && seats.includes(ws.role))seats.splice(seats.indexOf(ws.role),1);
+      if(m.action==='go' && seats.length===2 && seats[0]===ws.role){
+        r.departure=Date.now();
+        setTimeout(()=>{
+          if(rooms[ws.room]!==r)return;
+          r.departure=0;r.flightSeats=[];
+          for(const peer of r.p){peer.x=peer.role?5:1;peer.z=8;}
+          all(r,{t:'flight',seats:[],landed:true});
+        },36000);
+      }
+      return all(r,{t:'flight',seats:seats.slice(),elapsed:r.departure?Date.now()-r.departure:null});
+    }
+    if(r.flightSeats?.includes(ws.role) && !['chat','rtc','save'].includes(m.t))return;
     if (m.t === 'pos') { ws.x = +m.x || 0; ws.z = +m.z || 0; if (s.truck.driver === ws.role) { s.truck.x = ws.x; s.truck.z = ws.z; s.truck.ry = +m.ry || 0; }
       s.animals.forEach(a => { if (a.rider === ws.role) { a.x = ws.x; a.z = ws.z; } }); s.bikes.forEach(b => { if (b.rider === ws.role) { b.x = ws.x; b.z = ws.z; } });
       return send(other, { t: 'pos', x: m.x, z: m.z, ry: m.ry, sit: m.sit }); }
