@@ -269,10 +269,20 @@ function tex(w,h,fn,rx,ry){const c=document.createElement('canvas');c.width=w;c.
   const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.encoding=THREE.sRGBEncoding;t.anisotropy=8;t.repeat.set(rx||1,ry||1);return t}
 function noise(x,w,h,n,hs,ss,ls,hv,sv,lv,sz){for(let i=0;i<n;i++){x.fillStyle=`hsl(${hs+R()*hv},${ss+R()*sv}%,${ls+R()*lv}%)`;x.fillRect(R()*w,R()*h,1+R()*sz,1+R()*sz*2)}}
 const TX={
-  grass:tex(256,256,(x,w,h)=>{x.fillStyle='#74c23b';x.fillRect(0,0,w,h);noise(x,w,h,7000,85,48,36,26,22,16,2);
-    for(let i=0;i<50;i++){x.fillStyle=`rgba(${110+R()*60},${190+R()*30},60,.22)`;x.beginPath();x.arc(R()*w,R()*h,8+R()*20,0,7);x.fill()}},60,60),
-  soil:tex(256,256,(x,w,h)=>{x.fillStyle='#8a5a30';x.fillRect(0,0,w,h);noise(x,w,h,4000,22,35,20,12,15,16,2);
-    for(let i=0;i<8;i++){x.fillStyle='rgba(62,34,14,.7)';x.fillRect(i*32+8,0,9,h);x.fillStyle='rgba(205,155,98,.4)';x.fillRect(i*32+21,0,7,h)}}),
+  grass:tex(256,256,(ctx,w,h)=>{
+    ctx.fillStyle='#9bbc49';ctx.fillRect(0,0,w,h);
+    for(let i=0;i<2400;i++){
+      const x=R()*w,y=R()*h,size=1+R()*3;
+      ctx.strokeStyle=i%3?'rgba(84,125,47,.28)':'rgba(225,232,127,.59)';
+      ctx.beginPath();ctx.moveTo(x-1,y-size);ctx.lineTo(x,y);ctx.lineTo(x+2,y-size-1);ctx.stroke();
+    }
+  },60,60),
+  soil:tex(256,256,(ctx,w,h)=>{
+    const ridge=ctx.createLinearGradient(0,0,32,0);
+    for(const [offset,color] of [[0,'#86502e'],[.2,'#ae7141'],[.4,'#c58b55'],[.7,'#a5673b'],[1,'#86502e']])ridge.addColorStop(offset,color);
+    for(let row=0;row<8;row++){ctx.save();ctx.translate(row*32,0);ctx.fillStyle=ridge;ctx.fillRect(0,0,32,h);ctx.restore()}
+    for(let i=0;i<1900;i++){ctx.fillStyle=i%2?'rgba(66,34,17,.21)':'rgba(255,208,144,.28)';ctx.fillRect(R()*w,R()*h,1+R()*2,1)}
+  }),
   dirt:tex(256,256,(x,w,h)=>{x.fillStyle='#b88a52';x.fillRect(0,0,w,h);noise(x,w,h,5000,32,30,38,12,14,16,2)},3,10),
   plank:tex(256,256,(x,w,h)=>{x.fillStyle='#c4342b';x.fillRect(0,0,w,h);for(let i=0;i<w;i+=16){x.fillStyle='rgba(20,5,3,.55)';x.fillRect(i,0,2,h)}noise(x,w,h,2000,5,30,16,10,10,12,1)},3,1),
   wood:tex(128,128,(x,w,h)=>{x.fillStyle='#8b7352';x.fillRect(0,0,w,h);noise(x,w,h,1500,30,15,26,10,10,14,1);for(let i=0;i<10;i++){x.fillStyle='rgba(40,28,14,.4)';x.fillRect(0,i*13,w,1)}}),
@@ -482,7 +492,7 @@ function buildWorld(){
   const og=new THREE.Mesh(new THREE.PlaneGeometry(1000,1000),SM({map:gt2,roughness:1}));og.rotation.x=-Math.PI/2;og.position.y=-1.7;og.receiveShadow=true;scene.add(og);
   const gg0=new THREE.PlaneGeometry(260,270,174,180);gg0.rotateX(-Math.PI/2);
   const pa=gg0.attributes.position,vc=new Float32Array(pa.count*3);
-  for(let i=0;i<pa.count;i++){const x=pa.getX(i),z=pa.getZ(i)+40,d=riverD(x,z),hw=RHW(z);pa.setY(i,riverY(x,z));const w=clampv((hw+6-d)/6,0,1),sh=1-w*.45;vc.set([sh,sh*.97,sh*.9],i*3)}
+  for(let i=0;i<pa.count;i++){const x=pa.getX(i),z=pa.getZ(i)+40,d=riverD(x,z),hw=RHW(z);pa.setY(i,riverY(x,z));const w=clampv((hw+6-d)/6,0,1),sh=1-w*.45;const meadow=.5+.5*Math.sin(x*.21+Math.sin(z*.17))*Math.cos(z*.29);vc.set([sh*(.88+.12*meadow),sh*(.90+.09*meadow),sh*(.73+.15*meadow)],i*3)}
   gg0.setAttribute('color',new THREE.BufferAttribute(vc,3));gg0.computeVertexNormals();
   TX.grass.repeat.set(70,70);
   const ground=new THREE.Mesh(gg0,SM({map:TX.grass,roughness:1,vertexColors:true}));ground.position.z=40;ground.receiveShadow=true;scene.add(ground);
@@ -1030,7 +1040,7 @@ function extras(dt,t,k,mv,mo){
 function ensurePlots(){
   if(PM.length)return;
   for(let i=0;i<156;i++){const [x,z]=PP(i),g=new THREE.Group(),sz=i<144?5:3.7;g.position.set(x,0,z);scene.add(g);
-    const sm=SM({map:TX.soil,roughness:1,bumpMap:TX.soil,bumpScale:1.5}),soil=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz),sm);soil.rotation.x=-Math.PI/2;soil.position.y=.04;soil.receiveShadow=true;g.add(soil);
+    const sm=SM({map:TX.soil,roughness:1,bumpMap:TX.soil,bumpScale:.12}),soil=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz),sm);soil.rotation.x=-Math.PI/2;soil.position.y=.04;soil.receiveShadow=true;g.add(soil);
     const ghost=new THREE.Mesh(new THREE.PlaneGeometry(sz,sz),new THREE.MeshBasicMaterial({color:0xfff2a0,transparent:true,opacity:.3,depthWrite:false}));ghost.rotation.x=-Math.PI/2;ghost.position.y=.07;ghost.visible=false;g.add(ghost);
     const h=sz/2+.1;[[0,h,sz+.2,.14],[0,-h,sz+.2,.14],[h,0,.14,sz],[-h,0,.14,sz]].forEach(([a,b,w,d])=>BX(g,w,.16,d,MAT.wood,a,.08,b));
     const cg=new THREE.Group();cg.position.y=.05;g.add(cg);PM.push({g,cg,sm,soil,ghost,k:sz>4?1:.76,type:'',ready:false});
@@ -1483,6 +1493,7 @@ function update(dt,t){
   let dx=0,dz=0;
   if(keys.ArrowLeft||keys.a)dx--;if(keys.ArrowRight||keys.d)dx++;if(keys.ArrowUp||keys.w)dz--;if(keys.ArrowDown||keys.s)dz++;
   if(FPV){if(keys.q||keys.Q)camYaw+=dt*1.8;if(keys.e||keys.E)camYaw-=dt*1.8;if(dx||dz){const sy=Math.sin(camYaw),cy=Math.cos(camYaw),fx=-dz,rx=dx;dx=sy*fx-cy*rx;dz=cy*fx+sy*rx}}
+  if(!FPV && (dx || dz)){const horizontal=dx;dx=(horizontal+dz)*Math.SQRT1_2;dz=(dz-horizontal)*Math.SQRT1_2}
   if(S.truck.pass===role){dx=0;dz=0;route=[];pend=null;if(TRK_.m){me.x=TRK_.m.position.x;me.z=TRK_.m.position.z;me.ry=TRK_.m.rotation.y;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   {const ma=mountOf(role);if(ma&&ma.rider2===role){dx=0;dz=0;route=[];pend=null;me.x=ot.x;me.z=ot.z;me.ry=ot.ry;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   if(SIT>=0){if(dx||dz||route.length)standUp();else if(t-sitT>2){sitT=t;send({t:'pos',x:me.x,z:me.z,ry:me.ry,sit:SIT})}}
@@ -1532,7 +1543,7 @@ function update(dt,t){
     const ey=1.85+(mtd?RHT[mtd.k]+.15:0);cam.position.set(me.x,ey,me.z);
     cam.lookAt(me.x+Math.sin(camYaw)*Math.cos(camPit)*10,ey+Math.sin(camPit)*10,me.z+Math.cos(camYaw)*Math.cos(camPit)*10);
     pl[role].visible=false;if(MT[role])MT[role].m.visible=false}
-  else{pl[role].visible=true;if(MT[role])MT[role].m.visible=true;cam.position.lerp(new THREE.Vector3(me.x,23*camD,me.z+9.5*camD),.1);cam.lookAt(me.x,0,me.z-1.2)}sky.position.copy(cam.position);stars.position.copy(cam.position);
+  else{pl[role].visible=true;if(MT[role])MT[role].m.visible=true;cam.position.lerp(new THREE.Vector3(me.x+14*camD,20*camD,me.z+14*camD),.1);cam.lookAt(me.x,0,me.z)}sky.position.copy(cam.position);stars.position.copy(cam.position);
   const w=stage.clientWidth,h=stage.clientHeight;
   for(let r=0;r<2;r++){const p=pl[r],v=new THREE.Vector3(p.position.x,2.7,p.position.z).project(cam),d=tg[r];
     d.style.display=(v.z>1||(FPV&&r===role))?'none':'block';d.style.left=(v.x*.5+.5)*w+'px';d.style.top=(-v.y*.5+.5)*h+'px';
