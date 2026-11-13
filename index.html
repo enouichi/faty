@@ -193,7 +193,7 @@ body{background:#cfeaff}
 <div id="game" hidden>
   <div id="row">
   <div id="stagecol">
-  <div id="stage"><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
+  <div id="stage"><div id="airHud" hidden style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);z-index:12;background:#fff4d5;padding:4px 8px;border-radius:10px;white-space:nowrap"><span id="airStatus"></span> <button id="airBoard">ركوب الطائرة</button> <button id="airGo" hidden>إقلاع</button></div><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
 <div id="menu" hidden></div><canvas id="mini" width="200" height="200"></canvas>
     <div id="chatbox"><div class="row"><input id="chatIn" maxlength="80" placeholder="اكتب رسالة..."><button id="sendBtn">إرسال</button></div><div id="log"></div></div>
   </div>
@@ -318,7 +318,7 @@ const cb=(x,z,w,d,en)=>{const c={x1:x-w/2,z1:z-d/2,x2:x+w/2,z2:z+d/2,en};CB.push
 const cc=(x,z,r,en)=>{const c={x,z,r,en};CCr.push(c);reg(c,x-r,z-r,x+r,z+r)};
 function blocked(x,z,pr){pr=pr===undefined?.5:pr;
   if(x<X0+1||x>X0+GW-1||z<Z0+1||z>Z0+GH-1)return true;
-  if(riverBlocked(x,z,pr))return true;
+  if(riverBlocked(x,z,pr) && (z<-90||z>170))return true;
   const l=BK[Math.floor(x/8)+','+Math.floor(z/8)];
   if(l)for(const c of l){if(c.en&&!c.en())continue;
     if(c.r!==undefined){if(Math.hypot(x-c.x,z-c.z)<c.r+pr)return true}
@@ -343,7 +343,7 @@ function person(o){
   function mkLeg(sx){const hip=new THREE.Group();hip.position.set(sx,.95,0);g.add(hip);
     CY(hip,f?.1:.105,.085,.46,o.pants,0,-.23,0,10);
     const kn=new THREE.Group();kn.position.y=-.46;hip.add(kn);
-    CY(kn,.085,.062,.44,o.pants,0,-.22,0,10);BX(kn,.14,.1,.3,boot,0,-.45,.06);BX(kn,.15,.03,.31,0x15110d,0,-.5,.06);
+    CY(kn,.085,.062,.44,o.swim?sk:o.pants,0,-.22,0,10);BX(kn,.14,.1,.3,o.swim?sk:boot,0,-.45,.06);BX(kn,.15,.03,.31,o.swim?sk:0x15110d,0,-.5,.06);
     return [hip,kn]}
   const [hL,kL]=mkLeg(-.1),[hR,kR]=mkLeg(.1);
   const up=new THREE.Group();up.position.y=.95;g.add(up);
@@ -509,12 +509,12 @@ function buildWorld(){
       'void main(){vec2 p=vW.xz*.3;float e=.06;float c=wv(p);'+
       'vec3 n=normalize(vec3(-(wv(p+vec2(e,0.))-c)/e*.09,1.,-(wv(p+vec2(0.,e))-c)/e*.09));'+
       'vec3 V=normalize(cameraPosition-vW);float fr=pow(1.-max(dot(n,V),0.),3.)*.85+.08;'+
-      'vec3 shallow=vec3(.25,.72,.78);vec3 deep=vec3(.08,.45,.7);'+
+      'vec3 shallow=vec3(.29,.80,.69);vec3 deep=vec3(.045,.32,.48);'+
       'vec3 base=mix(shallow,deep,smoothstep(.0,.7,vD))*(.25+.75*uDay);float flw=sin(vW.z*2.2-uT*4.+sin(vW.x*1.1+uT*.5)*2.)*.5+.5;base+=vec3(.05,.1,.13)*flw;'+
       'vec3 R=reflect(-uSun,n);float sp=pow(max(dot(R,V),0.),110.)*uDay*1.6;'+
       'float foam=(1.-smoothstep(.0,.16,vD+sin(vW.x*2.+vW.z*3.-uT*1.8)*.03))*.9;'+
       'vec3 col=mix(base,uSky*(.35+.65*uDay),fr)+sp*vec3(1.,.95,.8);col=mix(col,vec3(.92),foam);'+
-      'float d=length(vW-cameraPosition);col=mix(col,uFog,smoothstep(uFogN,uFogF,d));'+
+      'float lace=sin(vW.x*3.+sin(vW.z*2.+uT*.6))+cos(vW.z*3.2+sin(vW.x*2.-uT*.45));col+=vec3(.08,.14,.09)*(1.-smoothstep(.0,.14,abs(lace)))*(1.-vD)*uDay;float d=length(vW-cameraPosition);col=mix(col,uFog,smoothstep(uFogN,uFogF,d));'+
       'float spk=pow(max(0.,sin(vW.x*3.1+uT*2.)*sin(vW.z*2.7-uT*3.)),10.);col+=spk*.35;gl_FragColor=vec4(col,clamp(.86+smoothstep(0.,.3,vD)*.14,0.,1.));}'});
     const rm=new THREE.Mesh(rg,RIVER);rm.renderOrder=2;rm.frustumCulled=false;scene.add(rm)}
   /* جسر على النهر */
@@ -1080,6 +1080,74 @@ function extras(dt,t,k,mv,mo){
   dustT-=dt;if(dustT<=0){dustT=.14;if(mv)puff(me.x,.1,me.z,1,.55,.46,.33,.35,.5);if(mo){const o=pl[1-role].position;puff(o.x,.1,o.z,1,.55,.46,.33,.35,.5)}}
   smokeT-=dt;if(smokeT<=0){smokeT=.35;if(!S.own[0])puff(93,6.4,-9.25,1,.78,.78,.8,.9,.3);if(!S.own[1])puff(-90,6.4,46.25,1,.78,.78,.8,.9,.3)}
   stepPS(dt)}
+const air={seats:[],start:null,model:null,prop:null};
+const swimmers=[],ripples=[];
+function buildLeisure(){
+  const g=new THREE.Group();air.model=g;scene.add(g);g.position.set(3,0,6);
+  const ivory=0xffedbe, red=0xc84131, blue=0x214b61;
+  SP(g,1,ivory,0,1,0,.78,.54,2.3);
+  SP(g,1,red,0,1,1.72,.69,.52,.65);
+  for(const side of [-1,1]){
+    SP(g,1,ivory,side*1.75,1,0,2.15,.13,.7);
+    SP(g,1,red,side*3.48,1,0,.45,.135,.48);
+    BX(g,.49,.28,.52,blue,side*.37,1.35,0);
+    BX(g,.53,.54,.12,0xa16c42,side*.37,1.56,-.30);
+    CY(g,.23,.23,.15,blue,side*.61,.24,.5,16).rotation.z=Math.PI/2;
+    BX(g,.09,.51,.09,blue,side*.6,.54,.5);
+  }
+  SP(g,1,red,0,1.19,-1.88,1.18,.10,.45);
+  SP(g,1,red,0,1.45,-1.78,.11,.63,.49);
+  const prop=new THREE.Group();g.add(prop);prop.position.set(0,1,2.38);
+  SP(prop,1,blue,0,0,0,.11,.94,.065);SP(prop,.16,ivory,0,0,.09);air.prop=prop;
+  for(let r=0;r<2;r++){
+    const skin=r?0xe0b48f:0xd2a077,suit=r?0xc64e72:0x196f90;
+    const p=person({skin,hair:r?0x4a2e1c:0x2c2218,fem:!!r,braid:!!r,beard:!r,h:r?1.1:1.2,shirt:r?suit:skin,pants:suit,rolled:true,swim:true});
+    p.rotation.order='YXZ';p.visible=false;scene.add(p);swimmers.push(p);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(.7,.75,44),new THREE.MeshBasicMaterial({color:0xd6fffc,transparent:true,opacity:.42,depthWrite:false,side:THREE.DoubleSide}));
+    ring.rotation.x=-Math.PI/2;ring.renderOrder=4;scene.add(ring);ring.visible=false;ripples.push(ring);
+  }
+}
+function atWater(x,z){return z>-92&&z<174&&Math.abs(z-BZ)>2.1&&riverD(x,z)<RHW(z)+.55}
+function flightMessage(m){
+  air.seats=m.seats;air.start=m.elapsed==null?null:performance.now()-m.elapsed;
+  if(m.landed){me.x=role?5:1;me.z=8;ot.x=role?1:5;ot.z=8;send({t:'pos',x:me.x,z:me.z,ry:0})}
+  if(m.landed||air.seats.includes(role)){route=[];pend=null;closeMenu()}
+}
+function leisureFrame(t){
+  const g=air.model, phase=air.start===null?0:Math.min(1,(performance.now()-air.start)/36000);
+  const angle=phase*Math.PI*2;
+  g.position.set(3-34*(1-Math.cos(angle)),13*Math.sin(Math.PI*phase)**2,6+34*Math.sin(angle));
+  g.rotation.y=-angle;g.rotation.z=.14*Math.sin(Math.PI*phase)**2;
+  air.prop.rotation.z=t*(air.start===null?1:46);
+  g.updateMatrixWorld();
+  for(let r=0;r<2;r++){
+    const p=pl[r],seat=air.seats.indexOf(r),sw=swimmers[r],ring=ripples[r];
+    if(seat>=0){
+      const pos=g.localToWorld(new THREE.Vector3(seat?.37:-.37,1.42,0));
+      sitPose(p,g.rotation.y);p.position.set(pos.x,pos.y-.92*p.scale.y,pos.z);
+      if(r===role){me.x=pos.x;me.z=pos.z}
+    }
+    const wet=seat<0&&atWater(p.position.x,p.position.z)&&!mountOf(r)&&![S.truck.driver,S.truck.pass].includes(r);
+    p.visible=!wet;sw.visible=ring.visible=wet;
+    if(wet){
+      const beat=t*3.4+r;sw.rotation.set(.98,p.rotation.y,0,'YXZ');
+      sw.position.set(p.position.x,-1.08+.055*Math.sin(beat),p.position.z);
+      const u=sw.userData;u.head.rotation.x=-.82;
+      u.aL.rotation.x=Math.sin(beat)*1.35-1;u.aR.rotation.x=-Math.sin(beat)*1.35-1;
+      u.lL.rotation.x=.25*Math.cos(beat);u.lR.rotation.x=-u.lL.rotation.x;
+      ring.position.set(p.position.x,-.30,p.position.z);const cycle=(t*.62+r*.45)%1;
+      ring.scale.setScalar(.65+cycle*1.25);ring.material.opacity=.48*(1-cycle);
+    }
+  }
+  const onboard=air.seats.includes(role),near=Math.hypot(me.x-3,me.z-6)<6;
+  $('airHud').hidden=!onboard&&!near;
+  $('airBoard').hidden=air.start!==null;
+  $('airBoard').textContent=onboard?'النزول من الطائرة':'ركوب الطائرة';
+  $('airGo').hidden=air.start!==null||air.seats[0]!==role||air.seats.length!==2;
+  $('airStatus').textContent=air.start!==null?'جولة فوق النهر':onboard?'المقاعد '+air.seats.length+'/2':'طائرة المزرعة';
+}
+$('airBoard').onclick=()=>{if(SIT>=0)standUp();send({t:'flight',action:air.seats.includes(role)?'exit':'board'})};
+$('airGo').onclick=()=>send({t:'flight',action:'go'});
 function ensurePlots(){
   if(PM.length)return;
   for(let i=0;i<156;i++){const [x,z]=PP(i),g=new THREE.Group(),sz=i<144?5:3.7;g.position.set(x,0,z);scene.add(g);
@@ -1122,6 +1190,7 @@ function connect(first){
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.t==='err'){$('err').style.color='#b03a2e';$('err').textContent=m.msg}
+    if(m.t==='flight'){flightMessage(m);return}
     if(m.t==='joined'){
       role=m.role;me.x=role?1.5:-1.5;me.z=2;ot.x=role?-1.5:1.5;ot.z=2;
       $('role').textContent='أنت: '+NM[role];
@@ -1130,7 +1199,7 @@ function connect(first){
     if(m.t==='state'){
       S=m.s;S.rt=performance.now();
       $('lobby').hidden=true;$('game').hidden=false;document.body.style.background='#1d2419';
-      if(!built){built=true;resize();ensurePlots();buildWorld();setupExtras();drawMiniBase();
+      if(!built){built=true;resize();ensurePlots();buildWorld();setupExtras();buildLeisure();drawMiniBase();
         pl[0]=mkPlayer(0,S.out[0]);pl[1]=mkPlayer(1,S.out[1]);pl.forEach(p=>scene.add(p));
         for(let r=0;r<2;r++){const d=document.createElement('div');d.className='tag';d.innerHTML='<div class="bb"></div><div class="nm"></div>';$('ov').appendChild(d);tg[r]=d}}
       S.plots.forEach((p,i)=>{const pm=PM[i],av=avail(i);pm.g.visible=true;pm.soil.visible=i<144?av:true;pm.ghost.visible=i<144&&!av;
@@ -1537,6 +1606,7 @@ function update(dt,t){
   if(keys.ArrowLeft||keys.a)dx--;if(keys.ArrowRight||keys.d)dx++;if(keys.ArrowUp||keys.w)dz--;if(keys.ArrowDown||keys.s)dz++;
   if(FPV){if(keys.q||keys.Q)camYaw+=dt*1.8;if(keys.e||keys.E)camYaw-=dt*1.8;if(dx||dz){const sy=Math.sin(camYaw),cy=Math.cos(camYaw),fx=-dz,rx=dx;dx=sy*fx-cy*rx;dz=cy*fx+sy*rx}}
   if(!FPV && (dx || dz)){const horizontal=dx;dx=(horizontal+dz)*Math.SQRT1_2;dz=(dz-horizontal)*Math.SQRT1_2}
+  if(air.seats.includes(role)){dx=dz=0;route=[];pend=null}
   if(S.truck.pass===role){dx=0;dz=0;route=[];pend=null;if(TRK_.m){me.x=TRK_.m.position.x;me.z=TRK_.m.position.z;me.ry=TRK_.m.rotation.y;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   {const ma=mountOf(role);if(ma&&ma.rider2===role){dx=0;dz=0;route=[];pend=null;me.x=ot.x;me.z=ot.z;me.ry=ot.ry;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   if(SIT>=0){if(dx||dz||route.length)standUp();else if(t-sitT>2){sitT=t;send({t:'pos',x:me.x,z:me.z,ry:me.ry,sit:SIT})}}
@@ -1544,8 +1614,8 @@ function update(dt,t){
   else if(route.length){const p=route[0],vx=p.x-me.x,vz=p.z-me.z,d=Math.hypot(vx,vz);if(d<.35)route.shift();else{dx=vx/d;dz=vz/d}}
   else if(pend){const o=pend;pend=null;if(Math.hypot(me.x-o.x,me.z-o.z)<o.r+1.5){if(o.t==='kid')act('kid:'+o.i);else if(o.t==='wild')act('hunt:'+o.wid);else openMenu(o)}else $('msg').textContent='اقترب أكثر من '+o.label}
   let mv=false;
-  if(dx||dz){const n=Math.hypot(dx,dz),spd=S.truck.driver===role?15:(mountOf(role)?RSPD[mountOf(role).k]:6),sx=dx/n*spd*dt,sz=dz/n*spd*dt;
-    if(!blocked(me.x+sx,me.z))me.x+=sx;if(!blocked(me.x,me.z+sz))me.z+=sz;
+  if(dx||dz){const n=Math.hypot(dx,dz),spd=S.truck.driver===role?15:(mountOf(role)?RSPD[mountOf(role).k]:atWater(me.x,me.z)?3.3:6),sx=dx/n*spd*dt,sz=dz/n*spd*dt;
+    const riding=S.truck.driver===role||!!mountOf(role);if(!blocked(me.x+sx,me.z)&&!(riding&&riverBlocked(me.x+sx,me.z,.5)))me.x+=sx;if(!blocked(me.x,me.z+sz)&&!(riding&&riverBlocked(me.x,me.z+sz,.5)))me.z+=sz;
     me.ry=Math.atan2(dx,dz);mv=true;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}
   isMoving=mv||route.length>0;if(huntT>0){huntT-=dt;if(huntP)turn(pl[role],Math.atan2(huntP.x-me.x,huntP.z-me.z),.4)}
   const my=pl[role],ou=pl[1-role];
@@ -1581,14 +1651,15 @@ function update(dt,t){
   WINM.forEach(m=>m.emissiveIntensity=(1-k)*1.6);extras(dt,t,k,mv,mo);
   $('clock').textContent='نهار مشمس';
   rain.visible=!!S.rain;if(S.rain){rain.position.set(me.x,0,me.z);const a=rain.geometry.attributes.position;for(let i=0;i<900;i++){let y=a.getY(i*2)-dt*22;if(y<0)y+=22;a.setY(i*2,y);a.setY(i*2+1,y-.9)}a.needsUpdate=true}
+  leisureFrame(t);const flying=air.seats.includes(role),height=flying?air.model.position.y:0,wet=swimmers[role].visible;
   const mtd=mountOf(role);
   if(FPV){if(route.length&&!(keys.w||keys.a||keys.s||keys.d||keys.ArrowUp||keys.ArrowDown||keys.ArrowLeft||keys.ArrowRight)){let d=me.ry-camYaw;d=Math.atan2(Math.sin(d),Math.cos(d));camYaw+=d*.06}
-    const ey=1.85+(mtd?RHT[mtd.k]+.15:0);cam.position.set(me.x,ey,me.z);
+    const ey=(flying?height+2.5:wet?.3:1.85)+(mtd?RHT[mtd.k]+.15:0);cam.position.set(me.x,ey,me.z);
     cam.lookAt(me.x+Math.sin(camYaw)*Math.cos(camPit)*10,ey+Math.sin(camPit)*10,me.z+Math.cos(camYaw)*Math.cos(camPit)*10);
-    pl[role].visible=false;if(MT[role])MT[role].m.visible=false}
-  else{pl[role].visible=true;if(MT[role])MT[role].m.visible=true;cam.position.lerp(new THREE.Vector3(me.x+22*camD,32*camD,me.z+22*camD),.1);cam.lookAt(me.x,0,me.z)}sky.position.copy(cam.position);stars.position.copy(cam.position);
+    swimmers[role].visible=false;pl[role].visible=false;if(MT[role])MT[role].m.visible=false}
+  else{pl[role].visible=!wet;if(MT[role])MT[role].m.visible=true;cam.position.lerp(new THREE.Vector3(me.x+22*camD,height+32*camD,me.z+22*camD),.1);cam.lookAt(me.x,height,me.z)}sky.position.copy(cam.position);stars.position.copy(cam.position);
   const w=stage.clientWidth,h=stage.clientHeight;
-  for(let r=0;r<2;r++){const p=pl[r],v=new THREE.Vector3(p.position.x,2.7,p.position.z).project(cam),d=tg[r];
+  for(let r=0;r<2;r++){const p=pl[r],v=new THREE.Vector3(p.position.x,p.position.y+2.7,p.position.z).project(cam),d=tg[r];
     d.style.display=(v.z>1||(FPV&&r===role))?'none':'block';d.style.left=(v.x*.5+.5)*w+'px';d.style.top=(-v.y*.5+.5)*h+'px';
     d.lastChild.textContent=NM[r];d.lastChild.style.color=r?'#f0c2cc':'#b3cdee';
     const b=d.firstChild,bb=bub[r];if(bb&&Date.now()-bb.t<6000){b.style.display='block';b.textContent=bb.text}else b.style.display='none'}
