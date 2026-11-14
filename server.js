@@ -241,19 +241,30 @@ wss.on('connection', ws => {
     }
     const r = rooms[ws.room]; if (!r) return;
     const s = r.s, other = r.p.find(w => w !== ws);
+    if(m.t==='beach'){
+      const {x,z}=ws;
+      if(!Number.isFinite(x)||!Number.isFinite(z)||z < -89||z>168||Math.abs(z+2)<4||r.flightSeats?.includes(ws.role))return;
+      const center=-58+7*Math.sin(z*.045)+4*Math.sin(z*.11);
+      const slope=.315*Math.cos(z*.045)+.44*Math.cos(z*.11);
+      const width=4.5+1.5*Math.sin(z*.07+1);
+      const bank=Math.abs(x-center)/Math.hypot(1,slope)-width;
+      if(bank<1||bank>10)return;
+      s.beach={x:center+Math.sign(x-center)*(width+5)*Math.hypot(1,slope),z};
+      return all(r,{t:'beach',spot:s.beach});
+    }
     if(m.t==='flight'){
       const seats=r.flightSeats||(r.flightSeats=[]);
-      if(r.p.length!==2||r.departure)return;
+      if(r.departure)return;
       if(m.action==='board' && !seats.includes(ws.role) && Math.hypot((ws.x??(ws.role?1.5:-1.5))-3,(ws.z??2)-6)<6 &&
          ![s.truck.driver,s.truck.pass].includes(ws.role) && ![...s.animals,...s.bikes].some(a=>a.rider===ws.role||a.rider2===ws.role))seats.push(ws.role);
       if(m.action==='exit' && seats.includes(ws.role))seats.splice(seats.indexOf(ws.role),1);
-      if(m.action==='go' && seats.length===2 && seats[0]===ws.role){
+      if(m.action==='go' && seats.includes(ws.role)){
         r.departure=Date.now();
         setTimeout(()=>{
           if(rooms[ws.room]!==r)return;
           r.departure=0;r.flightSeats=[];
-          for(const peer of r.p){peer.x=peer.role?5:1;peer.z=8;}
-          all(r,{t:'flight',seats:[],landed:true});
+          for(const peer of r.p.filter(p=>seats.includes(p.role))){peer.x=peer.role?5:1;peer.z=8;}
+          all(r,{t:'flight',seats:[],landed:true,riders:seats});
         },36000);
       }
       return all(r,{t:'flight',seats:seats.slice(),elapsed:r.departure?Date.now()-r.departure:null});
