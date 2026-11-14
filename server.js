@@ -78,13 +78,19 @@ const send = (w, o) => w && w.readyState === 1 && w.send(JSON.stringify(o));
 const all = (r, o) => r.p.forEach(w => send(w, o));
 const avail = (s, i) => i < LAND ? !!s.lo[i] : i < 150 ? !!s.own[0] : !!s.own[1];
 const capOf = (s, k) => 6 + 6 * (s.up[k] || 0) + 4 * (s.own[0] + s.own[1]);
+const cuts=Object.keys({...ANI,...WILD});
+const stores=()=>Object.fromEntries(cuts.map(k=>[k,0]));
+function initializeCrew(w){
+  const x=42+w.id%6*2,z=123+Math.floor(w.id/6)*2;
+  return Object.assign(w,{x,z,tx:x,tz:z,energy:100,mode:'work'});
+}
 const newState = (w) => {
   const stock = {}, mult = {}, inv = {}, up = {};
   for (const k in BASE) { stock[k] = 0; mult[k] = 1; }
   for (const k in FLOW) inv[k] = 0;
   for (const k in ANI) up[k] = 0;
   return {
-    money: 400, feed: 40, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
+    pantry:stores(), dishes:stores(), money: 400, feed: 40, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
     plots: Array.from({ length: PLOTS }, () => ({ c: '', p: 0, w: 0 })),
     garden: Array(100).fill(''), trees: Array(NTREES).fill(3), animals: [], enemies: [],
     rel: [0, 0], own: [0, 0], lo: Array.from({ length: LAND }, (_, i) => i < START_LAND ? 1 : 0),
@@ -93,7 +99,7 @@ const newState = (w) => {
     out: [0, 0], wd: [[1, 0, 0, 0, 0, 0], [1, 0, 0, 0, 0, 0]], auto: { dairy: '', bakery: '' }, req: null,
     truck: { x: 12, z: -1, ry: 0, driver: null, pass: null, cargo: {} },
     wild: WILDLIST.map((k, i) => ({ id: i, k, hp: WILD[k][0], res: 0 })),
-    workers: Array.from({ length: w === undefined ? 10 : w }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })),
+    workers: Array.from({ length: w === undefined ? 10 : w }, (_, i) => ({ id: i + 1, role: 'farmer', x: -2 + i * 1.2, z: 1, tx: -2 + i * 1.2, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.4 })).map(initializeCrew),
     msg: 'مرحبًا! عندكما 10 عمال يعملون وحدهم، ويمكنكما شراء أي أرض بالنقر عليها.'
   };
 };
@@ -101,6 +107,7 @@ function loadSave(d) {
   const b = newState(0), num = (v, def, lo, hi) => Number.isFinite(+v) ? Math.min(hi, Math.max(lo, +v)) : def;
   if (!d || typeof d !== 'object') return b;
   b.money = num(d.money, b.money, 0, 1e9); b.feed = num(d.feed, b.feed, 0, 80); b.time = num(d.time, b.time, 0, 1e9);
+  for(const k of cuts)for(const field of ['pantry','dishes'])b[field][k]=Math.floor(num(d[field]?.[k],0,0,100000));
   b.hives = num(d.hives, 0, 0, 3) | 0; b.house = num(d.house, 0, 0, 3) | 0;
   for (const k in BASE) b.stock[k] = num(d.stock && d.stock[k], 0, 0, 1e6) | 0;
   for (const k in FLOW) b.inv[k] = num(d.inv && d.inv[k], 0, 0, 1e5) | 0;
@@ -112,7 +119,7 @@ function loadSave(d) {
   b.rel = [num(d.rel && d.rel[0], 0, 0, 100), num(d.rel && d.rel[1], 0, 0, 100)]; b.own = [d.own && d.own[0] ? 1 : 0, d.own && d.own[1] ? 1 : 0];
   b.animals = (Array.isArray(d.animals) ? d.animals : []).slice(0, 200).filter(a => a && ANI[a.k]).map((a, i) => ({ id: i + 1, k: a.k, x: num(a.x, ENC[a.k][0], -300, 300), z: num(a.z, ENC[a.k][1], -300, 300), t: 0, rider: null, rider2: null }));
   if (d.kdays) b.kdays = num(d.kdays, 0, 0, 1e6) | 0;
-  b.workers = (Array.isArray(d.workers) ? d.workers : []).slice(0, 20).filter(w => w && WROLES.includes(w.role)).map((w, i) => ({ id: i + 1, role: w.role, x: 0, z: 1, tx: 0, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.3 }));
+  b.workers = (Array.isArray(d.workers) ? d.workers : []).slice(0, 20).filter(w => w && WROLES.includes(w.role)).map((w, i) => ({ id: i + 1, role: w.role, x: 0, z: 1, tx: 0, tz: 1, act: '', v: 0, i: -1, busy: 0.5 + i * 0.3 })).map((w,i)=>{initializeCrew(w);w.energy=num(d.workers?.[i]?.energy,100,0,100);return w});
   if (d.wd) for (let r = 0; r < 2; r++) for (let i = 0; i < 6; i++) b.wd[r][i] = d.wd[r] && d.wd[r][i] ? 1 : 0;
   if (d.out) b.out = [num(d.out[0], 0, 0, 5) | 0, num(d.out[1], 0, 0, 5) | 0];
   if (d.truck && d.truck.cargo) for (const k in BASE) b.truck.cargo[k] = num(d.truck.cargo[k], 0, 0, 1e6) | 0;
@@ -135,7 +142,7 @@ function tick(r) {
   if (day !== r.day) { r.day = day; for (const k in BASE) s.mult[k] = +(0.8 + Math.random() * 0.5).toFixed(2); }
   s.rain = false;
   s.plots.forEach(p => { if (p.c && p.w && p.p < 100) p.p = Math.min(100, p.p + 100 / CROPS[p.c][2] * dt * (1 + 0.1 * s.tools.plow) * WF[s.weather.t]); });
-  const hb = 1 + 0.12 * Math.min(5, s.workers.filter(w => w.role === 'herder').length);
+  const hb = 1 + 0.12 * Math.min(5, s.workers.filter(w => w.role === 'herder' && w.mode==='work').length);
   s.animals.forEach(a => {
     const [, prod, cy, use] = ANI[a.k];
     if (!prod) return;
@@ -162,6 +169,8 @@ function tick(r) {
 const sellKeys = (s, keys) => { let v = 0; keys.forEach(k => { v += Math.round(s.stock[k] * BASE[k] * s.mult[k]); s.stock[k] = 0; }); s.money += v; mis(s, 'sell', v); addXp(s, Math.floor(v / 40)); return v; };
 const near = (list, w) => { let b = null, bd = 1e9; list.forEach(i => { const [x, z] = plotXY(i); const d = Math.hypot(x - w.x, z - w.z); if (d < bd) { bd = d; b = i; } }); return b; };
 function setTask(r, w, act, tx, tz, work, i) {
+  const slot=['farmer','herder','buyer','woodcutter'].indexOf(w.role);
+  tx=39+slot*10+(w.id%5)*1.2;tz=120+((w.id+w.v)%4)*1.4;
   w.act = act; w.tx = tx; w.tz = tz; w.v++; w.i = i === undefined ? -1 : i;
   w.busy = Math.max(1.2, Math.hypot(tx - w.x, tz - w.z) * 1.35 / 5) + work;
   if (i !== undefined && i >= 0) r.lock.add((act === 'chop' ? 't' : 'p') + i);
@@ -220,7 +229,22 @@ function finish(r, w) {
   else if (w.act === 'chop' && w.i >= 0 && s.trees[w.i] > 0) { s.trees[w.i] = 0; s.stock.wood += 3 + Math.floor(s.tools.axe / 2); r.rg[w.i] = s.time + 90; mis(s, 'chop'); addXp(s, 2); }
   release(r, w); w.act = '';
 }
-function wtick(r, dt) { r.s.workers.forEach(w => { if (w.busy > 0) { w.busy -= dt; if (w.busy <= 0) finish(r, w); } else assign(r, w); }); }
+function wtick(r, dt) { r.s.workers.forEach(w => {
+  const night=(r.s.time%120)>=60;
+  const mode=night?'sleep':(w.mode==='meal'&&w.energy<99)||w.energy<=15?'meal':'work';
+  if(w.mode!==mode){
+    release(r,w);w.mode=mode;w.act=mode;w.v++;w.busy=0;
+    w.tx=mode==='sleep'?40+(w.id%4)*8:73+(w.id%4)*1.2;
+    w.tz=mode==='sleep'?143:136+(w.id%3);
+  }
+  if(mode!=='work'){
+    const dx=w.tx-w.x,dz=w.tz-w.z,dist=Math.hypot(dx,dz),step=Math.min(dist,5.5*dt);
+    if(dist>.01){w.x+=dx/dist*step;w.z+=dz/dist*step}
+    else w.energy=Math.min(100,w.energy+dt*(night?4:12));
+    return;
+  }
+  w.energy=Math.max(0,w.energy-2.2*dt);
+ if (w.busy > 0) { w.busy -= dt; if (w.busy <= 0) finish(r, w); } else assign(r, w); }); }
 setInterval(() => { for (const c in rooms) if (rooms[c].p.length === 2) tick(rooms[c]); }, 100);
 
 wss.on('connection', ws => {
@@ -282,6 +306,15 @@ wss.on('connection', ws => {
     if (m.t === 'rtc') return send(other, { t: 'rtc', d: m.d });
     if (r.p.length < 2) return;
     const who = NAMES[ws.role], now = Date.now();
+    if(['buyCut','cookCut','eatDish'].includes(m.t)){
+      const k=m.k;if(!cuts.includes(k))return;
+      const [x,z]=m.t==='buyCut'?[28,83]:m.t==='cookCut'?[14,83]:[19,85];
+      if(!Number.isFinite(ws.x)||Math.hypot(ws.x-x,ws.z-z)>7)return;
+      if(m.t==='buyCut'){if(s.money<8)return;s.money-=8;s.pantry[k]++}
+      if(m.t==='cookCut'){if(!s.pantry[k])return;s.pantry[k]--;s.dishes[k]+=2}
+      if(m.t==='eatDish'){if(!s.dishes[k])return;s.dishes[k]--;addXp(s,1)}
+      return all(r,{t:'state',s});
+    }
     if (m.t === 'plant') {
       const p = s.plots[m.i], c = CROPS[m.c];
       if (!p || !c || !avail(s, m.i) || p.c || s.money < c[0]) return;
@@ -318,7 +351,7 @@ wss.on('connection', ws => {
     } else if (m.t === 'hire') {
       if (!WROLES.includes(m.r) || s.workers.length >= maxWorkers(s) || s.money < hireCost(s)) return;
       s.money -= hireCost(s); const id = s.workers.reduce((a, w) => Math.max(a, w.id), 0) + 1;
-      s.workers.push({ id, role: m.r, x: rnd(-3, 3), z: 1, tx: 0, tz: 1, act: '', v: 0, busy: 0.3, i: -1 }); s.msg = 'تم توظيف عامل جديد';
+      s.workers.push(initializeCrew({ id, role: m.r, x: rnd(-3, 3), z: 1, tx: 0, tz: 1, act: '', v: 0, busy: 0.3, i: -1 })); s.msg = 'تم توظيف عامل جديد';
     } else if (m.t === 'setRole') {
       const w = s.workers.find(x => x.id === (m.id | 0)); if (!w || !WROLES.includes(m.r) || w.role === m.r) return;
       release(r, w); w.role = m.r; w.act = ''; w.busy = 0.3; s.msg = 'تغيّرت مهمة العامل';
