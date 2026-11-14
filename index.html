@@ -193,7 +193,7 @@ body{background:#cfeaff}
 <div id="game" hidden>
   <div id="row">
   <div id="stagecol">
-  <div id="stage"><div id="airHud" hidden style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);z-index:12;background:#fff4d5;padding:4px 8px;border-radius:10px;white-space:nowrap"><span id="airStatus"></span> <button id="airBoard">ركوب الطائرة</button> <button id="airGo" hidden>إقلاع</button></div><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
+  <div id="stage"><button hidden id="beachBtn" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:20">⛱ نصب المظلة وفرش الفوطتين</button><div id="airHud" hidden style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);z-index:12;background:#fff4d5;padding:4px 8px;border-radius:10px;white-space:nowrap"><span id="airStatus"></span> <button id="airBoard">ركوب الطائرة</button> <button id="airGo" hidden>إقلاع</button></div><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
 <div id="menu" hidden></div><canvas id="mini" width="200" height="200"></canvas>
     <div id="chatbox"><div class="row"><input id="chatIn" maxlength="80" placeholder="اكتب رسالة..."><button id="sendBtn">إرسال</button></div><div id="log"></div></div>
   </div>
@@ -1107,11 +1107,33 @@ function buildLeisure(){
     ring.rotation.x=-Math.PI/2;ring.renderOrder=4;scene.add(ring);ring.visible=false;ripples.push(ring);
   }
 }
+let beachKit;
+function showBeach(spot){
+  if(!spot)return;
+  if(!beachKit){
+    const g=new THREE.Group();beachKit=g;scene.add(g);
+    CY(g,.055,.072,2.85,0xe5c389,0,1.42,0,12);
+    for(let i=0;i<12;i++){
+      const a=i*Math.PI/6;
+      add(g,new THREE.ConeGeometry(1.65,.77,2,1,true,a,Math.PI/6),i%2?0xffedc6:0xde6145,0,2.48,0);
+    }
+    SP(g,.09,0xffc763,0,2.91,0);
+    for(const side of [-1,1]){
+      BX(g,.80,.045,1.85,side<0?0x30949d:0xe89650,side*.63,.046,.62);
+      for(const end of [-1,1])BX(g,.79,.012,.10,0xffebcf,side*.63,.073,.62+end*.71);
+    }
+  }
+  beachKit.position.set(spot.x,0,spot.z);
+}
+$('beachBtn').onclick=()=>{
+  send({t:'pos',x:me.x,z:me.z,ry:me.ry});send({t:'beach'});
+};
 function atWater(x,z){return z>-92&&z<174&&Math.abs(z-BZ)>2.1&&riverD(x,z)<RHW(z)+.55}
 function flightMessage(m){
   air.seats=m.seats;air.start=m.elapsed==null?null:performance.now()-m.elapsed;
-  if(m.landed){me.x=role?5:1;me.z=8;ot.x=role?1:5;ot.z=8;send({t:'pos',x:me.x,z:me.z,ry:0})}
-  if(m.landed||air.seats.includes(role)){route=[];pend=null;closeMenu()}
+  if(m.landed&&m.riders.includes(1-role)){ot.x=role?1:5;ot.z=8}
+  if(m.landed&&m.riders.includes(role)){me.x=role?5:1;me.z=8;send({t:'pos',x:me.x,z:me.z,ry:0})}
+  if((m.landed&&m.riders.includes(role))||air.seats.includes(role)){route=[];pend=null;closeMenu()}
 }
 function leisureFrame(t){
   const g=air.model, phase=air.start===null?0:Math.min(1,(performance.now()-air.start)/36000);
@@ -1139,11 +1161,14 @@ function leisureFrame(t){
       ring.scale.setScalar(.65+cycle*1.25);ring.material.opacity=.48*(1-cycle);
     }
   }
+  if(S.beach&&!beachKit)showBeach(S.beach);
+  const bank=riverD(me.x,me.z)-RHW(me.z);
+  $('beachBtn').hidden=air.seats.includes(role)||me.z < -89||me.z>168||Math.abs(me.z+2)<4||bank<1||bank>10;
   const onboard=air.seats.includes(role),near=Math.hypot(me.x-3,me.z-6)<6;
   $('airHud').hidden=!onboard&&!near;
   $('airBoard').hidden=air.start!==null;
   $('airBoard').textContent=onboard?'النزول من الطائرة':'ركوب الطائرة';
-  $('airGo').hidden=air.start!==null||air.seats[0]!==role||air.seats.length!==2;
+  $('airGo').hidden=air.start!==null||!onboard;
   $('airStatus').textContent=air.start!==null?'جولة فوق النهر':onboard?'المقاعد '+air.seats.length+'/2':'طائرة المزرعة';
 }
 $('airBoard').onclick=()=>{if(SIT>=0)standUp();send({t:'flight',action:air.seats.includes(role)?'exit':'board'})};
@@ -1190,6 +1215,7 @@ function connect(first){
   ws.onmessage=e=>{
     const m=JSON.parse(e.data);
     if(m.t==='err'){$('err').style.color='#b03a2e';$('err').textContent=m.msg}
+    if(m.t==='beach'){showBeach(m.spot);return}
     if(m.t==='flight'){flightMessage(m);return}
     if(m.t==='joined'){
       role=m.role;me.x=role?1.5:-1.5;me.z=2;ot.x=role?-1.5:1.5;ot.z=2;
