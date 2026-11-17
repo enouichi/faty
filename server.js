@@ -84,13 +84,129 @@ function initializeCrew(w){
   const x=42+w.id%6*2,z=123+Math.floor(w.id/6)*2;
   return Object.assign(w,{x,z,tx:x,tz:z,energy:100,mode:'work'});
 }
+function newFrontier(){
+  return {wall:180,fort:0,guards:[3,2,1],prisoners:0,loot:30,nextRaid:200,phase:'peace',enemies:[],wave:0,roof:[false,false],boat:{seats:[],side:0,progress:0,moving:false},message:'القارب عند الضفة الشرقية، والقلعة شمال المزرعة'};
+}
+function restoreFrontier(data,time){
+  const f=newFrontier(),n=(v,d,max)=>Number.isFinite(v)?Math.max(0,Math.min(max,Math.floor(v))):d;
+  if(!data)return f;
+  f.fort=n(data.fort,0,5);f.wall=n(data.wall,180,180+f.fort*80);
+  f.guards=[0,1,2].map(i=>n(data.guards?.[i],f.guards[i],20));
+  f.prisoners=n(data.prisoners,0,20);f.loot=n(data.loot,30,100);
+  f.nextRaid=time+60;f.message='الحراسة مستعدة؛ استئناف الهجمات بعد دقيقة';
+  return f;
+}
+const boatDock=side=>side?[-78,-42]:[-43,-14];
+function boatPoint(b){
+  const from=boatDock(b.side),to=boatDock(1-b.side),t=b.progress;
+  return [from[0]+(to[0]-from[0])*t,from[1]+(to[1]-from[1])*t];
+}
+function captureRaider(s,enemy){
+  s.frontier.prisoners=Math.min(20,s.frontier.prisoners+1);
+  if(enemy.animal){s.animals.push(enemy.animal);delete enemy.animal}
+  if(enemy.crop){s.stock[enemy.crop]+=enemy.quantity;delete enemy.crop}
+}
+function frontierTick(r,dt){
+  const s=r.s,f=s.frontier,b=f.boat;
+  if(b.moving){
+    b.progress=Math.min(1,b.progress+dt/14);
+    if(b.progress>=1){b.side=1-b.side;b.progress=0;b.moving=false;f.message='وصل القارب. يمكن النزول أو العودة'}
+  }
+  const point=boatPoint(b);
+  for(const peer of r.p)if(b.seats.includes(peer.role)){peer.x=point[0];peer.z=point[1]}
+  if(s.time>=f.nextRaid-35&&f.phase==='peace'){f.phase='warning';f.message='إنذار: كشافونا رصدوا فرقة قادمة! حصّنوا الحائط ووزعوا الجنود'}
+  if(s.time>=f.nextRaid&&['peace','warning'].includes(f.phase)){
+    f.phase='attack';f.wave++;
+    f.enemies=Array.from({length:4+Math.min(4,f.wave)},(_,i)=>({id:i,x:-94-i*1.7,z:-2+i*.65,hp:30,stolen:false}));
+    f.message='بدأ الهجوم! العدو يقترب من بوابة المزرعة';
+  }
+  if(f.phase==='attack'){
+    for(const enemy of f.enemies){
+      if(enemy.hp<=0)continue;
+      const target=enemy.stolen?-101:enemy.x < -40?-40:0;
+      const guardPower=enemy.x>-48?(enemy.x<-35?f.guards[0]:f.guards[1])*.9:0;
+      enemy.hp-=guardPower*dt;
+      if(enemy.hp<=0){captureRaider(s,enemy);continue}
+      if(enemy.stolen){enemy.x-=dt*4;continue}
+      if(enemy.x>=-40.5&&f.wall>0){f.wall=Math.max(0,f.wall-dt*3);continue}
+      enemy.x+=Math.min(target-enemy.x,dt*3);
+      if(enemy.x>=-.1){
+        const animal=s.animals.find(a=>a.rider==null&&a.rider2==null);
+        if(animal){enemy.animal=animal;s.animals.splice(s.animals.indexOf(animal),1);f.message='سرق المغيرون حيواناً! اعترضوهم قبل العودة'}
+        else {const crop=['wheat','corn','tomato','potato'].find(k=>s.stock[k]>0);if(crop){enemy.crop=crop;enemy.quantity=Math.min(3,s.stock[crop]);s.stock[crop]-=enemy.quantity;}f.message='وصل المغيرون إلى المخزن'}
+        enemy.stolen=true;
+      }
+    }
+    f.enemies=f.enemies.filter(e=>e.hp>0&&e.x>-103);
+    if(!f.enemies.length){f.phase='peace';f.nextRaid=s.time+150;f.loot=Math.min(100,f.loot+15);f.message='انتهت الغارة. أصلحوا الحائط واستعدوا للجولة القادمة'}
+  }
+}
+function frontierAction(r,ws,m){
+  const s=r.s,f=s.frontier,b=f.boat,a=m.action;
+  const close=(x,z,d=8)=>Number.isFinite(ws.x)&&Number.isFinite(ws.z)&&Math.hypot(ws.x-x,ws.z-z)<=d;
+  const castle=close(-15,-56,14);
+  if(r.flightSeats?.includes(ws.role))return;
+  const riding=[s.truck.driver,s.truck.pass].includes(ws.role)||[...s.animals,...s.bikes].some(v=>v.rider===ws.role||v.rider2===ws.role)||r.flightSeats?.includes(ws.role);
+  const reject=text=>{send(ws,{t:'frontierNotice',text});return};
+  const seat=b.seats.includes(ws.role);
+  if(a==='boat'){
+    if(b.moving)return reject('انتظر وصول القارب إلى الضفة');
+    if(seat){b.seats=b.seats.filter(role=>role!==ws.role);const [x,z]=boatDock(b.side);ws.x=x+(b.side?-2:2);ws.z=z+2;send(ws,{t:'frontierMove',x:ws.x,z:ws.z})}
+    else {const [x,z]=boatDock(b.side);if(!close(x,z,7)||riding||f.roof[ws.role])return reject('اقترب من القارب سيراً على الأقدام');b.seats.push(ws.role)}
+  }else if(a==='sail'){
+    if(!seat||b.moving)return;
+    b.moving=true;f.message='القارب يبحر نحو الضفة الأخرى';
+  }else if(a==='enter'||a==='roof'||a==='exit'){
+    if(!castle||riding||seat)return reject('اقترب من مدخل القلعة سيراً');
+    const x=-15+(ws.role?2:-2),z=a==='exit'?-45:a==='enter'?-53:-58;
+    f.roof[ws.role]=a==='roof';ws.x=x;ws.z=z;send(ws,{t:'frontierMove',x,z});
+  }else if(a==='repair'){
+    if(!castle&&!close(-40,-2))return;
+    if(f.wall>=180+f.fort*80)return reject('الحائط بحالة كاملة');
+    if(s.money<25||s.stock.wood<3)return reject('الإصلاح يحتاج 25 عملة و3 خشب');
+    s.money-=25;s.stock.wood-=3;f.wall=Math.min(180+f.fort*80,f.wall+80);
+  }else if(a==='fortify'){
+    if(!castle)return;
+    if(f.fort>=5)return reject('وصل التحصين إلى المستوى الخامس');
+    if(s.money<80||s.stock.wood<8)return reject('التحصين يحتاج 80 عملة و8 خشب');
+    s.money-=80;s.stock.wood-=8;f.fort++;f.wall=180+f.fort*80;
+  }else if(a==='recruit'){
+    if(!castle)return;
+    if(s.money<60||f.guards.reduce((x,y)=>x+y,0)>=20)return reject('التجنيد يحتاج 60 عملة، والحد 20 جندياً');
+    s.money-=60;f.guards[2]++;
+  }else if(a==='deploy'){
+    if(!castle)return;
+    const i=Number(m.unit);if(!Number.isInteger(i)||i<0||i>2)return;
+    const source=(i+2)%3;if(f.guards[source]){f.guards[source]--;f.guards[i]++}
+  }else if(a==='break'){
+    if(!close(-40,-2))return reject('اقترب من بوابة الحائط');
+    if(s.time-(ws.lastWallHit??-99)<.65)return;
+    ws.lastWallHit=s.time;f.wall=Math.max(0,f.wall-20);
+  }else if(a==='fight'){
+    if(riding||seat||f.roof[ws.role])return;
+    if(s.time-(ws.lastFight??-99)<.65)return;
+    const enemy=f.enemies.find(e=>e.hp>0&&close(e.x,e.z,6));if(!enemy)return reject('اقترب من أحد المغيرين');
+    ws.lastFight=s.time;enemy.hp-=18;if(enemy.hp<=0){captureRaider(s,enemy);f.message='تم أسر المغير واستعادة ما يحمله'}
+  }else if(a==='raid'){
+    if(!close(-99,-42,12))return reject('يجب أن تصل إلى القرية أولاً');
+    if(s.time<(f.raidAfter||0))return reject('القرية في حالة تأهب؛ انتظر حتى يهدأ الحراس');
+    f.raidAfter=s.time+45;
+    if(f.guards[2]<2){f.message='صدّ حراس القرية الهجوم. خصص جنديين على الأقل للفرقة المرافقة'}
+    else {const haul=Math.min(10,f.loot);f.loot-=haul;s.stock.wheat+=haul;f.prisoners=Math.min(20,f.prisoners+2);f.message='عادت الفرقة بـ '+haul+' قمح وأسيرين';f.nextRaid=Math.min(f.nextRaid,s.time+45)}
+  }else if(a==='release'){
+    if(!castle||!f.prisoners)return;
+    f.prisoners--;f.nextRaid=Math.max(f.nextRaid,s.time+90);f.message='أطلقتم أسيراً ومددتم المهلة قبل الغارة التالية';
+  }else return;
+  all(r,{t:'state',s});
+}
+
 const newState = (w) => {
   const stock = {}, mult = {}, inv = {}, up = {};
   for (const k in BASE) { stock[k] = 0; mult[k] = 1; }
   for (const k in FLOW) inv[k] = 0;
   for (const k in ANI) up[k] = 0;
   return {
-    pantry:stores(), dishes:stores(), money: 400, feed: 40, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
+    frontier:newFrontier(), pantry:stores(), dishes:stores(), money: 400, feed: 40, time: 20, hives: 0, rain: false, stock, mult, inv, up, house: 0,
     plots: Array.from({ length: PLOTS }, () => ({ c: '', p: 0, w: 0 })),
     garden: Array(100).fill(''), trees: Array(NTREES).fill(3), animals: [], enemies: [],
     rel: [0, 0], own: [0, 0], lo: Array.from({ length: LAND }, (_, i) => i < START_LAND ? 1 : 0),
@@ -108,6 +224,7 @@ function loadSave(d) {
   if (!d || typeof d !== 'object') return b;
   b.money = num(d.money, b.money, 0, 1e9); b.feed = num(d.feed, b.feed, 0, 80); b.time = num(d.time, b.time, 0, 1e9);
   for(const k of cuts)for(const field of ['pantry','dishes'])b[field][k]=Math.floor(num(d[field]?.[k],0,0,100000));
+  b.frontier=restoreFrontier(d.frontier,b.time);
   b.hives = num(d.hives, 0, 0, 3) | 0; b.house = num(d.house, 0, 0, 3) | 0;
   for (const k in BASE) b.stock[k] = num(d.stock && d.stock[k], 0, 0, 1e6) | 0;
   for (const k in FLOW) b.inv[k] = num(d.inv && d.inv[k], 0, 0, 1e5) | 0;
@@ -136,6 +253,7 @@ function addRel(s, n, v) {
 function tick(r) {
   const s = r.s, dt = 0.1;
   s.time += dt;
+  frontierTick(r,dt);
   if (s.time >= s.weather.until) { const q = Math.random(); s.weather = { t: q < 0.5 ? 'clear' : q < 0.8 ? 'cloudy' : 'windy', until: s.time + rnd(90, 200) }; }
   const md = Math.floor(s.time / 600); if (md !== s.mday) { s.mday = md; s.missions = newMissions(); s.msg = 'مهام جديدة اليوم!'; }
   const day = Math.floor(s.time / 120);
@@ -279,7 +397,7 @@ wss.on('connection', ws => {
     if(m.t==='flight'){
       const seats=r.flightSeats||(r.flightSeats=[]);
       if(r.departure)return;
-      if(m.action==='board' && !seats.includes(ws.role) && Math.hypot((ws.x??(ws.role?1.5:-1.5))-3,(ws.z??2)-6)<6 &&
+      if(m.action==='board' && !s.frontier.boat.seats.includes(ws.role) && !s.frontier.roof[ws.role] && !seats.includes(ws.role) && Math.hypot((ws.x??(ws.role?1.5:-1.5))-3,(ws.z??2)-6)<6 &&
          ![s.truck.driver,s.truck.pass].includes(ws.role) && ![...s.animals,...s.bikes].some(a=>a.rider===ws.role||a.rider2===ws.role))seats.push(ws.role);
       if(m.action==='exit' && seats.includes(ws.role))seats.splice(seats.indexOf(ws.role),1);
       if(m.action==='go' && seats.includes(ws.role)){
@@ -293,6 +411,10 @@ wss.on('connection', ws => {
       }
       return all(r,{t:'flight',seats:seats.slice(),elapsed:r.departure?Date.now()-r.departure:null});
     }
+    if(m.t==='frontier'){frontierAction(r,ws,m);return}
+    if(s.frontier.boat.seats.includes(ws.role)&&!['chat','rtc','save'].includes(m.t))return;
+    if(s.frontier.roof[ws.role]&&m.t==='pos'&&(!(m.x>=-21&&m.x<=-9&&m.z>=-61&&m.z<=-51)))return;
+    if(s.frontier.roof[ws.role]&&!['frontier','pos','chat','rtc','save'].includes(m.t))return;
     if(r.flightSeats?.includes(ws.role) && !['chat','rtc','save'].includes(m.t))return;
     if (m.t === 'pos') { ws.x = +m.x || 0; ws.z = +m.z || 0; if (s.truck.driver === ws.role) { s.truck.x = ws.x; s.truck.z = ws.z; s.truck.ry = +m.ry || 0; }
       s.animals.forEach(a => { if (a.rider === ws.role) { a.x = ws.x; a.z = ws.z; } }); s.bikes.forEach(b => { if (b.rider === ws.role) { b.x = ws.x; b.z = ws.z; } });
