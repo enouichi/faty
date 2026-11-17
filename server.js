@@ -68,7 +68,7 @@ function addXp(s, n) {
   s.xp += n; const lv = Math.floor(Math.sqrt(s.xp / 50)) + 1;
   if (lv > s.lvl) { for (let l = s.lvl + 1; l <= lv; l++) s.money += 150 * l; s.lvl = lv; s.msg = 'ارتفع مستوى المزرعة إلى ' + lv + '! مكافأة ' + 150 * lv; }
 }
-const plotXY = i => i < 144 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 150 ? [75 + ((i - 144) % 3) * 4.4, -11 + Math.floor((i - 144) / 3) * 4.4] : [-108 + ((i - 150) % 3) * 4.4, 26 + Math.floor((i - 150) / 3) * 4.4];
+const plotXY = i => i < 144 ? [-36 + (i % 6) * 5.6, 6 + Math.floor(i / 6) * 5.6] : i < 150 ? [75 + ((i - 144) % 3) * 4.4, -11 + Math.floor((i - 144) / 3) * 4.4] : [127 + ((i - 150) % 3) * 4.4, 26 + Math.floor((i - 150) / 3) * 4.4];
 const landOwned = s => s.lo.filter(Boolean).length;
 const landCost = s => 100 + 10 * (landOwned(s) - START_LAND);
 const maxWorkers = s => Infinity;
@@ -84,15 +84,171 @@ function initializeCrew(w){
   const x=42+w.id%6*2,z=123+Math.floor(w.id/6)*2;
   return Object.assign(w,{x,z,tx:x,tz:z,energy:100,mode:'work'});
 }
+const MILITARY = {
+  jeep: {name:'سيارة عسكرية',price:140,speed:12,range:20,damage:10,interval:1.5},
+  bike: {name:'دراجة عسكرية',price:80,speed:15,range:15,damage:8,interval:1.3},
+  cannon: {name:'مدفع',price:180,speed:0,range:65,damage:28,interval:4},
+  tank: {name:'دبابة',price:320,speed:8,range:38,damage:25,interval:3}
+};
+function prepareMilitary(f){
+  f.soldiers=[];
+  let id=0;
+  for(let group=0;group<3;group++)for(let i=0;i<f.guards[group];i++){
+    f.soldiers.push({id:id++,group,x:-28+group*8+i*1.5,z:-5+group*12,hp:100,cooldown:0,recover:0});
+  }
+  f.vehicles=f.vehicles||[];
+  f.shots=[];f.shotId=0;
+  f.workers=Array.from({length:10},(_,i)=>({id:i,x:-190+(i%5)*10,z:-30+Math.floor(i/5)*14,phase:i*.6}));
+  f.homeArmy=Array.from({length:8},(_,i)=>({id:100+i,x:-166+(i%4)*3,z:-48+Math.floor(i/4)*4,hp:70,cooldown:0,recover:0}));
+  f.production=0;
+}
+function march(unit,x,z,speed,dt){
+  const dx=x-unit.x,dz=z-unit.z,distance=Math.hypot(dx,dz);
+  if(distance<.05)return;
+  const step=Math.min(distance,speed*dt);
+  unit.ry=Math.atan2(dx,dz);unit.x+=dx/distance*step;unit.z+=dz/distance*step;
+}
+function nearestUnit(unit,candidates){
+  let nearest=null,distance=Infinity;
+  for(const candidate of candidates){
+    if(candidate.hp<=0)continue;
+    const d=Math.hypot(candidate.x-unit.x,candidate.z-unit.z);
+    if(d<distance){nearest=candidate;distance=d}
+  }
+  return {unit:nearest,distance};
+}
+function fireShot(f,source,target,damage,kind,team,time){
+  f.shots.push({id:++f.shotId,x:source.x,z:source.z,tx:target.x,tz:target.z,target:target.id,damage,kind,team,start:time,end:time+.5});
+}
+function tickMilitary(r,dt){
+  const s=r.s,f=s.frontier;
+  f.production+=dt;
+  if(f.production>=12){f.production=0;f.loot=Math.min(200,f.loot+f.workers.length)}
+  for(const w of f.workers){
+    w.phase+=dt*.4;w.x=-192+(w.id%5)*11+Math.sin(w.phase)*3;
+    w.z=-27+Math.floor(w.id/5)*15+Math.cos(w.phase)*2;
+  }
+  for(const shot of f.shots){
+    if(shot.done||s.time<shot.end)continue;
+    shot.done=true;
+    const targets=shot.team==='friendly'?[...f.enemies,...f.homeArmy]:f.soldiers;
+    const target=targets.find(e=>e.id===shot.target&&e.hp>0);
+    if(!target)continue;
+    target.hp=Math.max(0,target.hp-shot.damage);
+    if(target.hp===0){
+      if(shot.team==='friendly'){
+        captureRaider(s,target);
+        if(f.homeArmy.includes(target))target.recover=s.time+100;
+      }else target.recover=s.time+35;
+    }
+  }
+  f.shots=f.shots.filter(shot=>s.time<shot.end+.25);
+  const threats=f.enemies.filter(e=>e.hp>0);
+  const escortLeader=r.p.find(p=>Number.isFinite(p.x)&&p.x<-80);
+  for(const soldier of f.soldiers){
+    soldier.cooldown=Math.max(0,soldier.cooldown-dt);
+    if(soldier.hp<=0){
+      if(s.time>=soldier.recover){soldier.hp=100;soldier.x=-18;soldier.z=-45}
+      continue;
+    }
+    let candidates=threats;
+    if(!candidates.length&&soldier.group===2&&escortLeader)candidates=f.homeArmy;
+    const target=nearestUnit(soldier,candidates);
+    if(target.unit){
+      const enemy=target.unit;
+      // Reach the farm side of the crossing before engaging from spear range.
+      let tx=enemy.x,tz=enemy.z;
+      if(f.enemies.includes(enemy)&&enemy.x<-40&&f.wall>0&&enemy.z<215){tx=-33;tz=enemy.z}
+      if(target.distance>12)march(soldier,tx,tz,13,dt);
+      else if(soldier.cooldown<=0){
+        fireShot(f,soldier,enemy,12,'spear','friendly',s.time);soldier.cooldown=1.35;
+      }
+    }else{
+      const positions=[[-31,0],[10,40],[-18,-44]];
+      const home=soldier.group===2&&escortLeader?[escortLeader.x+2,escortLeader.z+3]:positions[soldier.group];
+      march(soldier,home[0]+soldier.id%3*1.4,home[1]+Math.floor(soldier.id/3)*1.4,8,dt);
+    }
+  }
+  for(const vehicle of f.vehicles){
+    const spec=MILITARY[vehicle.kind];vehicle.cooldown=Math.max(0,vehicle.cooldown-dt);
+    const target=nearestUnit(vehicle,threats);
+    if(!target.unit)continue;
+    if(spec.speed&&target.distance>spec.range*.8)march(vehicle,Math.max(-33,target.unit.x),target.unit.z,spec.speed,dt);
+    if(target.distance<=spec.range&&vehicle.cooldown<=0){
+      fireShot(f,vehicle,target.unit,spec.damage,vehicle.kind==='tank'||vehicle.kind==='cannon'?'shell':'spear','friendly',s.time);
+      vehicle.cooldown=spec.interval;vehicle.ry=Math.atan2(target.unit.x-vehicle.x,target.unit.z-vehicle.z);
+    }
+  }
+  for(const peer of r.p){
+    if(!Number.isFinite(peer.x)||f.boat.seats.includes(peer.role)||r.flightSeats?.includes(peer.role))continue;
+    const source={x:peer.x,z:peer.z};
+    const target=nearestUnit(source,threats.filter(e=>e.x>-46));
+    if(target.unit&&target.distance<=18&&s.time-(peer.autoSpear??-99)>=1.2){
+      peer.autoSpear=s.time;
+      fireShot(f,source,target.unit,20,'spear','friendly',s.time);
+    }
+  }
+  for(const enemy of [...f.enemies,...f.homeArmy]){
+    if(enemy.hp<=0){
+      if(f.homeArmy.includes(enemy)&&s.time>=enemy.recover)enemy.hp=70;
+      continue;
+    }
+    enemy.cooldown=Math.max(0,(enemy.cooldown||0)-dt);
+    const target=nearestUnit(enemy,f.soldiers);
+    if(target.unit&&target.distance<14&&enemy.cooldown<=0){
+      fireShot(f,enemy,target.unit,9,'spear','enemy',s.time);enemy.cooldown=1.9;
+    }
+  }
+}
+function startRaid(s){
+  const f=s.frontier;f.phase='attack';f.wave++;
+  f.south=f.wave%2===0;
+  const count=Math.min(12,Math.max(6,f.guards.reduce((a,b)=>a+b,0)));
+  const route=f.south?[[-92,205],[-65,230],[-30,230],[-25,165],[0,48]]:[[-90,-2],[-41,-2],[-33,-2],[0,48]];
+  f.enemies=Array.from({length:count},(_,i)=>({id:f.wave*1000+i,x:-160-i*1.7,z:-55+i*.8,hp:70,cooldown:0,stolen:false,step:0,route}));
+  f.message=f.south?'إنذار اقتحام من الفتحة الجنوبية؛ الجيش يتجه للاعتراض':'بدأ الاقتحام عند الحائط؛ الجيش يتحرك تلقائياً';
+}
+function moveRaiders(s,dt){
+  const f=s.frontier;
+  for(const enemy of f.enemies){
+    if(enemy.hp<=0||enemy.escaped)continue;
+    const target=enemy.route[enemy.step];
+    if(!target){enemy.escaped=true;continue}
+    const distance=Math.hypot(target[0]-enemy.x,target[1]-enemy.z);
+    if(distance>.5){march(enemy,target[0],target[1],f.south?12:7,dt);continue}
+    if(!enemy.stolen&&enemy.step===1&&!f.south&&f.wall>0){
+      f.wall=Math.max(0,f.wall-3*dt);continue;
+    }
+    enemy.step++;
+    if(!enemy.stolen&&enemy.step>=enemy.route.length){
+      const animal=s.animals.find(a=>a.rider==null&&a.rider2==null);
+      if(animal){enemy.animal=animal;s.animals.splice(s.animals.indexOf(animal),1)}
+      else{
+        const crop=['wheat','corn','tomato','potato'].find(k=>s.stock[k]>0);
+        if(crop){enemy.crop=crop;enemy.quantity=Math.min(3,s.stock[crop]);s.stock[crop]-=enemy.quantity}
+      }
+      enemy.stolen=true;enemy.route=enemy.route.slice().reverse().concat([[-160,-55]]);enemy.step=0;
+      f.message='المغيرون ينسحبون بالغنائم؛ الجيش يلاحقهم';
+    }
+  }
+  f.enemies=f.enemies.filter(e=>e.hp>0&&!e.escaped);
+  if(!f.enemies.length){
+    f.phase='peace';f.nextRaid=s.time+120;f.message='انتهى الاشتباك. عاد الجنود إلى نقاط الحراسة';
+  }
+}
+
 function newFrontier(){
-  return {wall:180,fort:0,guards:[3,2,1],prisoners:0,loot:30,nextRaid:200,phase:'peace',enemies:[],wave:0,roof:[false,false],boat:{seats:[],side:0,progress:0,moving:false},message:'القارب عند الضفة الشرقية، والقلعة شمال المزرعة'};
+  const f={wall:180,fort:0,guards:[3,2,1],prisoners:0,loot:30,nextRaid:200,phase:'peace',enemies:[],wave:0,roof:[false,false],boat:{seats:[],side:0,progress:0,moving:false},message:'الجيران شرق النهر؛ العدو في المنطقة الغربية. الحراسة تلقائية'};
+  prepareMilitary(f);f.vehicles=['jeep','bike','cannon','tank'].map((kind,i)=>({id:i,kind,x:-25+i*4,z:-102,cooldown:0,ry:0}));return f;
 }
 function restoreFrontier(data,time){
   const f=newFrontier(),n=(v,d,max)=>Number.isFinite(v)?Math.max(0,Math.min(max,Math.floor(v))):d;
   if(!data)return f;
   f.fort=n(data.fort,0,5);f.wall=n(data.wall,180,180+f.fort*80);
   f.guards=[0,1,2].map(i=>n(data.guards?.[i],f.guards[i],20));
-  f.prisoners=n(data.prisoners,0,20);f.loot=n(data.loot,30,100);
+  f.prisoners=n(data.prisoners,0,20);f.loot=n(data.loot,30,200);
+  prepareMilitary(f);
+  if(Array.isArray(data.vehicles))f.vehicles=data.vehicles.filter(v=>MILITARY[v.kind]).slice(0,8).map((v,i)=>({id:i,kind:v.kind,x:-25+i*3,z:-102,cooldown:0,ry:0}));
   f.nextRaid=time+60;f.message='الحراسة مستعدة؛ استئناف الهجمات بعد دقيقة';
   return f;
 }
@@ -114,32 +270,12 @@ function frontierTick(r,dt){
   }
   const point=boatPoint(b);
   for(const peer of r.p)if(b.seats.includes(peer.role)){peer.x=point[0];peer.z=point[1]}
-  if(s.time>=f.nextRaid-35&&f.phase==='peace'){f.phase='warning';f.message='إنذار: كشافونا رصدوا فرقة قادمة! حصّنوا الحائط ووزعوا الجنود'}
-  if(s.time>=f.nextRaid&&['peace','warning'].includes(f.phase)){
-    f.phase='attack';f.wave++;
-    f.enemies=Array.from({length:4+Math.min(4,f.wave)},(_,i)=>({id:i,x:-94-i*1.7,z:-2+i*.65,hp:30,stolen:false}));
-    f.message='بدأ الهجوم! العدو يقترب من بوابة المزرعة';
+  tickMilitary(r,dt);
+  if(s.time>=f.nextRaid-35&&f.phase==='peace'){
+    f.phase='warning';f.message=(f.wave%2===1?'رصدنا فرقة تتجه للممر الجنوبي':'رصدنا فرقة تتجه للحائط')+' · الجيش يستعد تلقائياً';
   }
-  if(f.phase==='attack'){
-    for(const enemy of f.enemies){
-      if(enemy.hp<=0)continue;
-      const target=enemy.stolen?-101:enemy.x < -40?-40:0;
-      const guardPower=enemy.x>-48?(enemy.x<-35?f.guards[0]:f.guards[1])*.9:0;
-      enemy.hp-=guardPower*dt;
-      if(enemy.hp<=0){captureRaider(s,enemy);continue}
-      if(enemy.stolen){enemy.x-=dt*4;continue}
-      if(enemy.x>=-40.5&&f.wall>0){f.wall=Math.max(0,f.wall-dt*3);continue}
-      enemy.x+=Math.min(target-enemy.x,dt*3);
-      if(enemy.x>=-.1){
-        const animal=s.animals.find(a=>a.rider==null&&a.rider2==null);
-        if(animal){enemy.animal=animal;s.animals.splice(s.animals.indexOf(animal),1);f.message='سرق المغيرون حيواناً! اعترضوهم قبل العودة'}
-        else {const crop=['wheat','corn','tomato','potato'].find(k=>s.stock[k]>0);if(crop){enemy.crop=crop;enemy.quantity=Math.min(3,s.stock[crop]);s.stock[crop]-=enemy.quantity;}f.message='وصل المغيرون إلى المخزن'}
-        enemy.stolen=true;
-      }
-    }
-    f.enemies=f.enemies.filter(e=>e.hp>0&&e.x>-103);
-    if(!f.enemies.length){f.phase='peace';f.nextRaid=s.time+150;f.loot=Math.min(100,f.loot+15);f.message='انتهت الغارة. أصلحوا الحائط واستعدوا للجولة القادمة'}
-  }
+  if(s.time>=f.nextRaid&&['peace','warning'].includes(f.phase))startRaid(s);
+  if(f.phase==='attack')moveRaiders(s,dt);
 }
 function frontierAction(r,ws,m){
   const s=r.s,f=s.frontier,b=f.boat,a=m.action;
@@ -151,7 +287,7 @@ function frontierAction(r,ws,m){
   const seat=b.seats.includes(ws.role);
   if(a==='boat'){
     if(b.moving)return reject('انتظر وصول القارب إلى الضفة');
-    if(seat){b.seats=b.seats.filter(role=>role!==ws.role);const [x,z]=boatDock(b.side);ws.x=x+(b.side?-2:2);ws.z=z+2;send(ws,{t:'frontierMove',x:ws.x,z:ws.z})}
+    if(seat){if(b.side===1){f.soldiers.filter(g=>g.group===2).forEach((g,i)=>{g.x=-81-i*1.5;g.z=-44;})}b.seats=b.seats.filter(role=>role!==ws.role);const [x,z]=boatDock(b.side);ws.x=x+(b.side?-2:2);ws.z=z+2;send(ws,{t:'frontierMove',x:ws.x,z:ws.z})}
     else {const [x,z]=boatDock(b.side);if(!close(x,z,7)||riding||f.roof[ws.role])return reject('اقترب من القارب سيراً على الأقدام');b.seats.push(ws.role)}
   }else if(a==='sail'){
     if(!seat||b.moving)return;
@@ -173,11 +309,20 @@ function frontierAction(r,ws,m){
   }else if(a==='recruit'){
     if(!castle)return;
     if(s.money<60||f.guards.reduce((x,y)=>x+y,0)>=20)return reject('التجنيد يحتاج 60 عملة، والحد 20 جندياً');
-    s.money-=60;f.guards[2]++;
+    s.money-=60;f.guards[2]++;f.soldiers.push({id:f.soldiers.length,group:2,x:-18,z:-45,hp:100,cooldown:0,recover:0});
   }else if(a==='deploy'){
     if(!castle)return;
     const i=Number(m.unit);if(!Number.isInteger(i)||i<0||i>2)return;
-    const source=(i+2)%3;if(f.guards[source]){f.guards[source]--;f.guards[i]++}
+    const source=(i+2)%3;if(f.guards[source]){f.guards[source]--;f.guards[i]++;const unit=f.soldiers.find(g=>g.group===source);if(unit)unit.group=i}
+  }else if(a==='buyVehicle'){
+    if(!castle)return;
+    const spec=MILITARY[m.unit];if(!spec)return;
+    if(f.vehicles.length>=8||s.money<spec.price)return reject('رصيد غير كاف أو امتلأت ساحة الآليات (8)');
+    s.money-=spec.price;f.vehicles.push({id:f.vehicles.length,kind:m.unit,x:-25+f.vehicles.length*3,z:-102,cooldown:0,ry:0});
+  }else if(a==='southGuns'||a==='northGuns'){
+    if(!castle)return;
+    f.vehicles.filter(v=>v.kind==='cannon').forEach((v,i)=>{v.x=-25+i*4;v.z=a==='southGuns'?220:-2});
+    f.message='تم نقل المدافع إلى موقع الحراسة المحدد';
   }else if(a==='break'){
     if(!close(-40,-2))return reject('اقترب من بوابة الحائط');
     if(s.time-(ws.lastWallHit??-99)<.65)return;
@@ -188,11 +333,12 @@ function frontierAction(r,ws,m){
     const enemy=f.enemies.find(e=>e.hp>0&&close(e.x,e.z,6));if(!enemy)return reject('اقترب من أحد المغيرين');
     ws.lastFight=s.time;enemy.hp-=18;if(enemy.hp<=0){captureRaider(s,enemy);f.message='تم أسر المغير واستعادة ما يحمله'}
   }else if(a==='raid'){
-    if(!close(-99,-42,12))return reject('يجب أن تصل إلى القرية أولاً');
+    if(!close(-150,-42,16))return reject('يجب أن تصل إلى القرية أولاً');
     if(s.time<(f.raidAfter||0))return reject('القرية في حالة تأهب؛ انتظر حتى يهدأ الحراس');
     f.raidAfter=s.time+45;
-    if(f.guards[2]<2){f.message='صدّ حراس القرية الهجوم. خصص جنديين على الأقل للفرقة المرافقة'}
-    else {const haul=Math.min(10,f.loot);f.loot-=haul;s.stock.wheat+=haul;f.prisoners=Math.min(20,f.prisoners+2);f.message='عادت الفرقة بـ '+haul+' قمح وأسيرين';f.nextRaid=Math.min(f.nextRaid,s.time+45)}
+    if(f.homeArmy.some(g=>g.hp>0)){f.message='حراس القرية يدافعون عن المخزن. دع الفرقة المرافقة تواجههم أولاً'}
+    else if(f.guards[2]<2){f.message='صدّ حراس القرية الهجوم. خصص جنديين على الأقل للفرقة المرافقة'}
+    else {const haul=Math.min(10,f.loot);f.loot-=haul;s.stock.wheat+=haul;f.message='عادت الفرقة بـ '+haul+' قمح';f.nextRaid=Math.min(f.nextRaid,s.time+45)}
   }else if(a==='release'){
     if(!castle||!f.prisoners)return;
     f.prisoners--;f.nextRaid=Math.max(f.nextRaid,s.time+90);f.message='أطلقتم أسيراً ومددتم المهلة قبل الغارة التالية';
