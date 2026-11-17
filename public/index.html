@@ -193,7 +193,7 @@ body{background:#cfeaff}
 <div id="game" hidden>
   <div id="row">
   <div id="stagecol">
-  <div id="stage"><button hidden id="beachBtn" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:20">⛱ نصب المظلة وفرش الفوطتين</button><div id="airHud" hidden style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);z-index:12;background:#fff4d5;padding:4px 8px;border-radius:10px;white-space:nowrap"><span id="airStatus"></span> <button id="airBoard">ركوب الطائرة</button> <button id="airGo" hidden>إقلاع</button></div><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
+  <div id="stage"><div style="position:absolute;top:5px;left:50%;transform:translateX(-50%);z-index:15;color:#342719;background:#fff3dc;padding:5px 10px;border-radius:8px;max-width:80%;font-size:13px;text-align:center"><span id="frontierStatus">تحديث القلعة والقرية</span> <button id="frontierFight" hidden>صد المغير</button><button id="frontierBoat" hidden>القارب</button></div><button hidden id="beachBtn" style="position:absolute;bottom:10px;left:50%;transform:translateX(-50%);z-index:20">⛱ نصب المظلة وفرش الفوطتين</button><div id="airHud" hidden style="position:absolute;bottom:4px;left:50%;transform:translateX(-50%);z-index:12;background:#fff4d5;padding:4px 8px;border-radius:10px;white-space:nowrap"><span id="airStatus"></span> <button id="airBoard">ركوب الطائرة</button> <button id="airGo" hidden>إقلاع</button></div><div id="ov"></div><div id="tip"></div><div id="req" hidden></div>
 <div id="menu" hidden></div><canvas id="mini" width="200" height="200"></canvas>
     <div id="chatbox"><div class="row"><input id="chatIn" maxlength="80" placeholder="اكتب رسالة..."><button id="sendBtn">إرسال</button></div><div id="log"></div></div>
   </div>
@@ -317,6 +317,7 @@ function reg(c,x1,z1,x2,z2){for(let i=Math.floor((x1-3)/8);i<=Math.floor((x2+3)/
 const cb=(x,z,w,d,en)=>{const c={x1:x-w/2,z1:z-d/2,x2:x+w/2,z2:z+d/2,en};CB.push(c);reg(c,c.x1,c.z1,c.x2,c.z2)};
 const cc=(x,z,r,en)=>{const c={x,z,r,en};CCr.push(c);reg(c,x-r,z-r,x+r,z+r)};
 function blocked(x,z,pr){pr=pr===undefined?.5:pr;
+  if(S?.frontier?.wall>0&&Math.abs(x+40)<1.3&&z>-28&&z<20)return true;
   if(x<X0+1||x>X0+GW-1||z<Z0+1||z>Z0+GH-1)return true;
   if(riverBlocked(x,z,pr) && (z<-90||z>170))return true;
   const l=BK[Math.floor(x/8)+','+Math.floor(z/8)];
@@ -585,7 +586,7 @@ function buildWorld(){
   /* الأشجار القابلة للقطع */
   TREES.forEach(([x,z],i)=>{const t=mkTree(1.1+R()*.25,true,R()<.7?0:R()<.65?1:2);t.position.set(x,0,z);t.rotation.y=R()*6;scene.add(t);TR.push(t);cc(x,z,.6);mkIO({t:'tree',i,x,z,r:3.6,label:'شجرة'},2.2,5,2.2)});
   /* غابات الزينة (مجسّمات مكررة لأداء أفضل) */
-  {const usable=(x,z)=>{if(x>-50&&x<70&&z>-48&&z<148)return false;if(x>62&&x<72&&z>-6&&z<86)return false;if(z>78&&z<86&&x>62&&x<106)return false;if(x>92&&z>50)return false;if(Math.abs(z+2)<4)return false;if(x>66&&x<100&&z>-20&&z<24)return false;if(x>-116&&x<-82&&z>16&&z<58)return false;return !blocked(x,z,2.5)};
+  {const usable=(x,z)=>{if((x>-30&&x<0&&z>-70&&z<-43)||(x>-114&&x<-72&&z>-70&&z<-20)||(x>-49&&x<-36&&z>-20&&z<-8))return false;if(x>-50&&x<70&&z>-48&&z<148)return false;if(x>62&&x<72&&z>-6&&z<86)return false;if(z>78&&z<86&&x>62&&x<106)return false;if(x>92&&z>50)return false;if(Math.abs(z+2)<4)return false;if(x>66&&x<100&&z>-20&&z<24)return false;if(x>-116&&x<-82&&z>16&&z<58)return false;return !blocked(x,z,2.5)};
     const NT=520,tg0=CY(new THREE.Group(),.25,.38,3,0x000000,0,0,0,8).geometry.clone();tg0.translate(0,1.5,0);
     const tm=new THREE.InstancedMesh(tg0,MAT.bark,NT),cm=new THREE.InstancedMesh(IG1,MS(TX.leaf,0xffffff,1),NT*5),m4=new THREE.Matrix4(),q=new THREE.Quaternion(),ev=new THREE.Euler(),cl=new THREE.Color();
     const GC=[0x3b5428,0x466530,0x33492a,0x4d6b34],ofs=[[0,3.8,0,1.7],[1,3.2,.6,1.3],[-1,3.4,-.5,1.4],[.3,4.7,-.2,1.2],[-.4,4.4,.9,1.1]];
@@ -595,7 +596,7 @@ function buildWorld(){
       ofs.forEach((o,k)=>{const sx=s*o[3];m4.compose(new THREE.Vector3(x+Math.cos(ry)*o[0]*s+Math.sin(ry)*o[2]*s,o[1]*s,z-Math.sin(ry)*o[0]*s+Math.cos(ry)*o[2]*s),q,new THREE.Vector3(sx,sx*.85,sx));cm.setMatrixAt(n*5+k,m4);cm.setColorAt(n*5+k,cl.setHex(GC[(n+k)%4]))});
       cc(x,z,.6*s);n++}
     tm.count=n;cm.count=n*5;[tm,cm].forEach(m=>{m.frustumCulled=false;m.castShadow=true;m.receiveShadow=true;m.instanceMatrix.needsUpdate=true;scene.add(m)});cm.instanceColor.needsUpdate=true}
-  for(let i=0;i<40;i++){const x=-120+R()*240,z=-88+R()*200;if(blocked(x,z,2)||Math.abs(x)<4||Math.abs(z+2)<3)continue;SP(scene,.5+R()*.6,[0x77756e,0x6a6963][i%2],x,.2,z,1,.6,1);cc(x,z,.6)}
+  for(let i=0;i<40;i++){const x=-120+R()*240,z=-88+R()*200;if((x>-30&&x<0&&z>-70&&z<-43)||(x>-114&&x<-72&&z>-70&&z<-20)||blocked(x,z,2)||Math.abs(x)<4||Math.abs(z+2)<3)continue;SP(scene,.5+R()*.6,[0x77756e,0x6a6963][i%2],x,.2,z,1,.6,1);cc(x,z,.6)}
   /* بيوت الجيران والبوابات */
   house(91,-8,6,5,MAT.plaster,MAT.tile);house(-92,47.5,6,5,MAT.plaster,MAT.tile);
   [0,1].forEach(n=>{const [gx,gz,s]=GATES[n];gate(n);
@@ -1087,6 +1088,127 @@ const air={seats:[],start:null,model:null,prop:null};
 const swimmers=[],ripples=[];
 const kitchenCuts={...Object.fromEntries(Object.entries(SPN).map(([k,v])=>[k,v[0]])),lion:'أسد',elephant:'فيل',giraffe:'زرافة',rhino:'وحيد القرن',hippo:'فرس النهر',zebra:'حمار وحشي',bear:'دب'};
 const diningSeats=[];
+const frontierView={boat:null,wall:null,roof:null,enemies:new Map(),guards:[],captives:[],signature:''};
+function buildFrontier(){
+  const stone=SM({map:TX.stone,color:0x8b8678,roughness:1}),trim=0xb7aa8c;
+  function marker(text,x,y,z){const m=tag(text);m.position.set(x,y,z);scene.add(m)}
+  function interact(type,label,x,z,w=4,h=3,oy){mkIO({t:type,label,x,z,r:6},w,h,4,oy)}
+  for(const x of [-105,-94])for(const z of [-60,-48]){
+    house(x,z,6,5,0xb38a59,0x75533c);marker('قرية الضفة',x,5,z);
+  }
+  for(let i=0;i<8;i++){
+    const g=mkCrop(i%2?'corn':'wheat');g.position.set(-107+(i%4)*5,0,-33+Math.floor(i/4)*5);scene.add(g);
+  }
+  interact('village','القرية ومخزن المحصول',-99,-42,7);
+  const castle=new THREE.Group();castle.position.set(-15,0,-56);scene.add(castle);
+  BX(castle,16,.3,15,stone,0,.15,0);
+  BX(castle,16,4,.65,stone,0,2,-7);
+  for(const q of [-1,1]){
+    BX(castle,.65,4,14,stone,q*8,2,0);
+    BX(castle,5.5,4,.65,stone,q*5.3,2,7);
+    for(const z of [-7,7]){
+      CY(castle,1.65,1.8,6,stone,q*8,3,z,12);
+      for(let a=0;a<8;a++){const v=a*Math.PI/4;BX(castle,.55,.75,.55,trim,q*8+Math.cos(v)*1.45,6.2,z+Math.sin(v)*1.45)}
+    }
+  }
+  const roof=new THREE.Group();frontierView.roof=roof;castle.add(roof);
+  BX(roof,15.5,.3,13.5,stone,0,4,0);
+  for(let i=-7;i<=7;i+=2){BX(roof,.8,.8,.6,trim,i,4.6,-6.6);BX(roof,.8,.8,.6,trim,i,4.6,6.6)}
+  for(let i=0;i<10;i++)BX(castle,2,.4*(i+1),.7,trim,5,.2*(i+1),5-i*.7);
+  BX(castle,3,.2,2,MAT.wood,0,1.2,-1);
+  CY(castle,.07,.07,4,0x645744,-6,6,-5,8);BX(castle,2.2,1.2,.05,0x315d9a,-5,7.4,-5);
+  cb(-23,-56,.65,14);cb(-7,-56,.65,14);cb(-15,-63,16,.65);cb(-20.3,-49,5.5,.65);cb(-9.7,-49,5.5,.65);
+  marker('قلعتكما · قيادة الجيش',-15,8,-56);interact('castle','القلعة وقيادة الجيش',-15,-47,7);
+  interact('castle','درج السطح',-10,-55,3);
+  interact('castle','قيادة الجيش من السطح',-15,-58,8,2,5);
+  BX(castle,4,2.5,.15,stone,-4,1.25,-5.2);
+  for(let i=0;i<8;i++)CY(castle,.035,.035,2.6,0x3c4244,-6+i*.55,1.3,-2.5,6);
+  marker('السجن',-19,3.3,-59);
+  for(let i=0;i<20;i++){
+    const p=person({shirt:0x9b744d,pants:0x4a4d50,hair:0x352d28,skin:0xc9956c,h:1});p.position.set(-21+(i%5)*.8,0,-62+Math.floor(i/5)*.8);p.visible=false;scene.add(p);frontierView.captives.push(p);
+  }
+  const wall=new THREE.Group();scene.add(wall);frontierView.wall=wall;
+  for(let z=-26;z<=18;z+=4){BX(wall,1.3,3.6,3.9,stone,-40,1.8,z);BX(wall,1.5,.6,1.8,trim,-40,3.9,z)}
+  marker('الحائط · قابل للكسر والإصلاح',-40,5,-2);interact('frontierWall','بوابة الحائط',-37,-2,5);
+  const boat=new THREE.Group();frontierView.boat=boat;scene.add(boat);
+  SP(boat,1,0x774828,0,.15,0,1.4,.40,2.5);
+  BX(boat,2.4,.12,3.6,0xc59b66,0,.35,0);
+  for(const side of [-1,1])BX(boat,.14,.5,3.9,0x965c37,side*1.24,.55,0);
+  for(const z of [-.7,.7])BX(boat,2.4,.18,.48,0xe2bc79,0,.6,z);
+  for(const [x,z] of [[-43,-14],[-78,-42]]){
+    BX(scene,4,.2,4,MAT.wood,x,-.1,z);
+    marker('مرسى القارب',x,3,z);interact('boat','قارب لشخصين',x,z,5);
+  }
+  for(let i=0;i<20;i++){
+    const p=person({shirt:0x315d9a,pants:0x353d4c,hair:0x2e2825,skin:0xc9956c,hat:0x707b80,h:1.1});
+    BX(p.userData.aL,.35,.5,.09,0x4c6b8f,0,-.22,.15);
+    CY(p.userData.aR,.025,.025,1.6,0x7c5a37,0,-.25,.1,6);
+    scene.add(p);p.visible=false;frontierView.guards.push(p);
+  }
+}
+function frontierMenu(o){
+  const f=S.frontier,A=[],res={A,title:o.label};
+  res.note='الحائط '+Math.ceil(f.wall)+' | الجنود '+f.guards.join(' / ')+' | الأسرى '+f.prisoners;
+  if(o.t==='castle'){
+    A.push(['frontier:enter','دخول القلعة'],['frontier:roof','صعود السطح'],['frontier:exit','النزول والخروج'],
+      ['frontier:repair','إصلاح +80 · 25 عملة و3 خشب'],['frontier:fortify','تقوية الحائط · 80 عملة و8 خشب'],['frontier:recruit','تجنيد جندي · 60 عملة'],
+      ['frontier:deploy:0','نقل جندي من المرافقة إلى البوابة ('+f.guards[0]+')'],
+      ['frontier:deploy:1','نقل جندي من البوابة إلى الحيوانات ('+f.guards[1]+')'],
+      ['frontier:deploy:2','نقل جندي من الحيوانات إلى المرافقة ('+f.guards[2]+')'],
+      ['frontier:release','إطلاق أسير وتأخير الغارة',!f.prisoners]);
+  }else if(o.t==='frontierWall'){
+    A.push(['frontier:break','ضرب الحائط −20'],['frontier:repair','إصلاح +80 · 25 عملة و3 خشب'],['frontier:fight','صد أقرب مغير']);
+  }else if(o.t==='village'){
+    res.note+=' | محصول القرية '+f.loot;A.push(['frontier:raid','الهجوم مع الفرقة المرافقة وأخذ المحصول والأسرى']);
+  }else{
+    A.push(['frontier:boat',f.boat.seats.includes(role)?'النزول':'ركوب القارب',f.boat.moving],['frontier:sail','الإبحار إلى الضفة الأخرى',!f.boat.seats.includes(role)||f.boat.moving]);
+  }
+  return res;
+}
+function frontierFrame(t){
+  const f=S.frontier,v=frontierView,b=f.boat;
+  if(!v.boat)return;
+  const points=[[-43,-14],[-78,-42]],from=points[b.side],to=points[1-b.side];
+  v.boat.position.set(from[0]+(to[0]-from[0])*b.progress,-.18+.04*Math.sin(t*2),from[1]+(to[1]-from[1])*b.progress);
+  v.boat.rotation.y=Math.atan2(to[0]-from[0],to[1]-from[1]);
+  v.boat.updateMatrixWorld();
+  for(let r=0;r<2;r++){
+    const seat=b.seats.indexOf(r);
+    if(seat>=0){
+      const p=v.boat.localToWorld(new THREE.Vector3(0,.6,seat?.7:-.7));
+      sitPose(pl[r],v.boat.rotation.y);pl[r].position.set(p.x,p.y-.95*pl[r].scale.y,p.z);
+      pl[r].visible=!(FPV&&role===r);swimmers[r].visible=ripples[r].visible=false;
+      if(role===r){me.x=p.x;me.z=p.z}
+    }else if(f.roof[r])pl[r].position.y=4.18;
+  }
+  v.roof.visible=f.roof.some(Boolean)||Math.hypot(me.x+15,me.z+56)>13;
+  v.wall.scale.y=f.wall>0?.35+.65*f.wall/(180+f.fort*80):.08;
+  const sig=f.wall>0?'up':'down';if(sig!==v.signature){v.signature=sig;rebuildGrid()}
+  const ids=new Set();
+  for(const e of f.enemies){
+    ids.add(e.id);let p=v.enemies.get(e.id);
+    if(!p){p=person({shirt:0xa74838,pants:0x5e463c,hair:0x33291f,skin:0xc9956c,h:1.1});v.enemies.set(e.id,p);scene.add(p)}
+    p.visible=true;p.position.set(e.x,0,e.z);p.rotation.y=e.stolen?-Math.PI/2:Math.PI/2;walk(p,true,t);
+  }
+  for(const [id,p] of v.enemies)if(!ids.has(id)){p.visible=false}
+  let i=0;
+  for(let group=0;group<3;group++)for(let j=0;j<f.guards[group]&&i<v.guards.length;j++,i++){
+    const p=v.guards[i];p.visible=true;
+    const leader=pl[0],base=group===0?[-37,-8]:group===1?[7,5]:[leader.position.x-2,leader.position.z-3];
+    p.position.set(base[0]+(j%4)*1.3,group===2&&f.roof[0]?4.18:0,base[1]+Math.floor(j/4)*1.5);p.rotation.y=-Math.PI/2;
+    walk(p,group===2&&isMoving,t);
+    if(f.phase==='attack')p.userData.aR.rotation.x=-1+Math.sin(t*5)*.4;
+  }
+  for(;i<v.guards.length;i++)v.guards[i].visible=false;
+  v.captives.forEach((p,i)=>p.visible=i<f.prisoners);
+  const text=f.phase==='warning'?'⚠ هجوم خلال '+Math.ceil(f.nextRaid-S.time)+' ثانية':f.phase==='attack'?'⚔ المزرعة تتعرض للهجوم':f.message;
+  $('frontierStatus').textContent=text;
+  $('frontierFight').hidden=f.phase!=='attack';
+  $('frontierBoat').hidden=!b.seats.includes(role);
+}
+$('frontierFight').onclick=()=>send({t:'frontier',action:'fight'});
+$('frontierBoat').onclick=()=>openMenu({t:'boat',label:'القارب',x:me.x,z:me.z,r:100});
+
 function farmLife(){
   function sign(name,x,y,z){const t=tag(name);scene.add(t);t.position.set(x,y,z)}
   function counter(type,name,x,z,width){
@@ -1129,7 +1251,7 @@ function farmLife(){
   });
 }
 function buildLeisure(){
-  farmLife();rebuildGrid();
+  farmLife();buildFrontier();rebuildGrid();
   const g=new THREE.Group();air.model=g;scene.add(g);g.position.set(3,0,6);
   const ivory=0xffedbe, red=0xc84131, blue=0x214b61;
   SP(g,1,ivory,0,1,0,.78,.54,2.3);
@@ -1263,6 +1385,8 @@ function connect(first){
     const m=JSON.parse(e.data);
     if(m.t==='err'){$('err').style.color='#b03a2e';$('err').textContent=m.msg}
     if(m.t==='beach'){showBeach(m.spot);return}
+    if(m.t==='frontierNotice'){$('msg').textContent=m.text;return}
+    if(m.t==='frontierMove'){me.x=m.x;me.z=m.z;route=[];pend=null;if(SIT>=0)standUp();send({t:'pos',x:me.x,z:me.z,ry:me.ry});return}
     if(m.t==='flight'){flightMessage(m);return}
     if(m.t==='joined'){
       role=m.role;me.x=role?1.5:-1.5;me.z=2;ot.x=role?-1.5:1.5;ot.z=2;
@@ -1554,6 +1678,7 @@ addEventListener('keyup',e=>keys[e.key]=0);
 function openMenu(o){cur=o;menuKey='';renderMenu()}
 function closeMenu(){cur=null;$('menu').hidden=true;menuKey=''}
 function actions(o){
+  if(['castle','frontierWall','village','boat'].includes(o.t))return frontierMenu(o);
   const A=[],M=S.money,res={A};
   if(['grocer','cookshop','dining'].includes(o.t)){
     res.title=o.label;res.note=o.t==='cookshop'?'اختارا نوع اللحم لتحضير طبقين':o.t==='grocer'?'كل حصة بثماني عملات':'اجلسا واختارا طبقاً جاهزاً';
@@ -1640,6 +1765,7 @@ function renderMenu(){
   r.A.forEach(([a,tx,dis])=>{const b=document.createElement('button');b.textContent=tx;b.disabled=!!dis;b.onclick=e=>act(a,e);m.appendChild(b)});
   const x=document.createElement('button');x.className='alt';x.textContent='إغلاق';x.onclick=closeMenu;m.appendChild(x)}
 function act(a,ev){const [ty,x,y]=a.split(':');sfxAct(ty);
+  if(ty==='frontier'){send({t:'frontier',action:x,unit:y});return}
   if(ty==='dineSit'){sitDown(diningSeats[role]);return}
   if(['buyCut','cookCut','eatDish'].includes(ty)){if(ty==='eatDish')sitDown(diningSeats[role]);send({t:ty,k:x});return}
   if(ty==='chop'){send({t:'chop',i:+x});atk=.4;puff(cur?cur.x:me.x,1.4,cur?cur.z:me.z,8,.6,.45,.28,2,2.2)}
@@ -1691,7 +1817,7 @@ function update(dt,t){
   if(keys.ArrowLeft||keys.a)dx--;if(keys.ArrowRight||keys.d)dx++;if(keys.ArrowUp||keys.w)dz--;if(keys.ArrowDown||keys.s)dz++;
   if(FPV){if(keys.q||keys.Q)camYaw+=dt*1.8;if(keys.e||keys.E)camYaw-=dt*1.8;if(dx||dz){const sy=Math.sin(camYaw),cy=Math.cos(camYaw),fx=-dz,rx=dx;dx=sy*fx-cy*rx;dz=cy*fx+sy*rx}}
   if(!FPV && (dx || dz)){const horizontal=dx;dx=(horizontal+dz)*Math.SQRT1_2;dz=(dz-horizontal)*Math.SQRT1_2}
-  if(air.seats.includes(role)){dx=dz=0;route=[];pend=null}
+  if(air.seats.includes(role)||S.frontier.boat.seats.includes(role)){dx=dz=0;route=[];pend=null}
   if(S.truck.pass===role){dx=0;dz=0;route=[];pend=null;if(TRK_.m){me.x=TRK_.m.position.x;me.z=TRK_.m.position.z;me.ry=TRK_.m.rotation.y;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   {const ma=mountOf(role);if(ma&&ma.rider2===role){dx=0;dz=0;route=[];pend=null;me.x=ot.x;me.z=ot.z;me.ry=ot.ry;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}}
   if(SIT>=0){if(dx||dz||route.length)standUp();else if(t-sitT>2){sitT=t;send({t:'pos',x:me.x,z:me.z,ry:me.ry,sit:SIT})}}
@@ -1700,7 +1826,8 @@ function update(dt,t){
   else if(pend){const o=pend;pend=null;if(Math.hypot(me.x-o.x,me.z-o.z)<o.r+1.5){if(o.t==='kid')act('kid:'+o.i);else if(o.t==='wild')act('hunt:'+o.wid);else openMenu(o)}else $('msg').textContent='اقترب أكثر من '+o.label}
   let mv=false;
   if(dx||dz){const n=Math.hypot(dx,dz),spd=S.truck.driver===role?15:(mountOf(role)?RSPD[mountOf(role).k]:atWater(me.x,me.z)?3.3:6),sx=dx/n*spd*dt,sz=dz/n*spd*dt;
-    const riding=S.truck.driver===role||!!mountOf(role);if(!blocked(me.x+sx,me.z)&&!(riding&&riverBlocked(me.x+sx,me.z,.5)))me.x+=sx;if(!blocked(me.x,me.z+sz)&&!(riding&&riverBlocked(me.x,me.z+sz,.5)))me.z+=sz;
+    if(S.frontier.roof[role]){dx=clamp(me.x+sx,-21,-9)-me.x;dz=clamp(me.z+sz,-61,-51)-me.z;me.x+=dx;me.z+=dz;send({t:'pos',x:me.x,z:me.z,ry:me.ry});}
+    const riding=S.truck.driver===role||!!mountOf(role);if(!S.frontier.roof[role]&&!blocked(me.x+sx,me.z)&&!(riding&&riverBlocked(me.x+sx,me.z,.5)))me.x+=sx;if(!S.frontier.roof[role]&&!blocked(me.x,me.z+sz)&&!(riding&&riverBlocked(me.x,me.z+sz,.5)))me.z+=sz;
     me.ry=Math.atan2(dx,dz);mv=true;if(now20())send({t:'pos',x:me.x,z:me.z,ry:me.ry})}
   isMoving=mv||route.length>0;if(huntT>0){huntT-=dt;if(huntP)turn(pl[role],Math.atan2(huntP.x-me.x,huntP.z-me.z),.4)}
   const my=pl[role],ou=pl[1-role];
@@ -1736,10 +1863,10 @@ function update(dt,t){
   WINM.forEach(m=>m.emissiveIntensity=(1-k)*1.6);extras(dt,t,k,mv,mo);
   $('clock').textContent=tm%120>=60?'ليل · العمال في بيوتهم':tm%120<9?'الفجر · بداية العمل':'نهار';
   rain.visible=!!S.rain;if(S.rain){rain.position.set(me.x,0,me.z);const a=rain.geometry.attributes.position;for(let i=0;i<900;i++){let y=a.getY(i*2)-dt*22;if(y<0)y+=22;a.setY(i*2,y);a.setY(i*2+1,y-.9)}a.needsUpdate=true}
-  leisureFrame(t);const flying=air.seats.includes(role),height=flying?air.model.position.y:0,wet=swimmers[role].visible;
+  leisureFrame(t);frontierFrame(t);const flying=air.seats.includes(role),height=flying?air.model.position.y:S.frontier.roof[role]?4.18:0,wet=swimmers[role].visible;
   const mtd=mountOf(role);
   if(FPV){if(route.length&&!(keys.w||keys.a||keys.s||keys.d||keys.ArrowUp||keys.ArrowDown||keys.ArrowLeft||keys.ArrowRight)){let d=me.ry-camYaw;d=Math.atan2(Math.sin(d),Math.cos(d));camYaw+=d*.06}
-    const ey=(flying?height+2.5:wet?.3:1.85)+(mtd?RHT[mtd.k]+.15:0);cam.position.set(me.x,ey,me.z);
+    const ey=((flying||S.frontier.roof[role])?height+2.5:wet?.3:1.85)+(mtd?RHT[mtd.k]+.15:0);cam.position.set(me.x,ey,me.z);
     cam.lookAt(me.x+Math.sin(camYaw)*Math.cos(camPit)*10,ey+Math.sin(camPit)*10,me.z+Math.cos(camYaw)*Math.cos(camPit)*10);
     swimmers[role].visible=false;pl[role].visible=false;if(MT[role])MT[role].m.visible=false}
   else{pl[role].visible=!wet;if(MT[role])MT[role].m.visible=true;cam.position.lerp(new THREE.Vector3(me.x+22*camD,height+32*camD,me.z+22*camD),.1);cam.lookAt(me.x,height,me.z)}sky.position.copy(cam.position);stars.position.copy(cam.position);
