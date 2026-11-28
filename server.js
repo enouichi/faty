@@ -1,7 +1,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { WebSocketServer } = require('ws');
 const html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
-const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
+const MIME = { '.js':'application/javascript', '.glb':'model/gltf-binary', '.gltf':'model/gltf+json', '.bin':'application/octet-stream', '.txt':'text/plain', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.svg': 'image/svg+xml' };
 const server = http.createServer((q, r) => {
   const u = (q.url || '/').split('?')[0], ext = path.extname(u).toLowerCase();
   if (MIME[ext]) {
